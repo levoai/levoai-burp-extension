@@ -1,5 +1,0 @@
-Manifest-Version: 1.0
-Implementation-Version: 2.0.0
-Implementation-Title: levoai-burp-extension
-Implementation-URL: https://github.com/levoai/levoai-burp-extension
-

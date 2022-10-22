@@ -1,0 +1,38 @@
+name: NightlyBuild
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [11, 12, 13, 14, 15]
+
+    steps:
+      - name: JDK ${{ matrix.java }} - Checkout sources
+        uses: actions/checkout@v2
+
+      - name: JDK ${{ matrix.java }} - Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+          architecture: x64
+
+      - name: JDK ${{ matrix.java }} - Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: JDK ${{ matrix.java }} - Build extension JAR file
+        run: ./gradlew clean fatJar
+
+      - name: JDK ${{ matrix.java }} - Upload artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: NightBuild-JDK-${{ matrix.java }}
+          path: build/libs/LevoBurpPlugin.jar
