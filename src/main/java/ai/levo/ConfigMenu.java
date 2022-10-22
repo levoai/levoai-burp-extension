@@ -1,0 +1,213 @@
+package ai.levo;
+
+import burp.IBurpExtenderCallbacks;
+import burp.IExtensionStateListener;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+
+/**
+ * Menu to configure the extension options.
+ */
+public class ConfigMenu implements Runnable, IExtensionStateListener {
+
+    // Configuration menu names.
+    private static final String EXTENSION_MENU_NAME = "Levo.ai";
+    private static final String EXTENSION_MENU_TARGET_SCOPE_ONLY = "Send only traffic from defined target scope";
+    private static final String EXTENSION_MENU_ENABLE_SEND = "Send traffic to Levo";
+
+    /**
+     * Expose the configuration option for the restriction of the sending of requests in defined target scope.
+     */
+    static volatile boolean ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.FALSE;
+
+    /**
+     * Expose the configuration option to allow the user to enable sending the traffic to Levo's Satellite.
+     */
+    static volatile boolean IS_SENDING_ENABLED = Boolean.FALSE;
+
+    /**
+     * Default value of the Levo's Satellite URL.
+     */
+    public static volatile String DEFAULT_LEVO_SATELLITE_URL = "http://localhost:9999";
+
+    /**
+     * Option configuration key for the restriction of the sending of requests in defined target scope.
+     */
+    private static final String ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY = "ONLY_INCLUDE_REQUESTS_FROM_SCOPE";
+
+    /**
+     * Option configuration key to allow the user to start sending the traffic to Levo's Satellite.
+     */
+    public static final String ENABLE_SENDING_CFG_KEY = "ENABLE_SENDING";
+
+    /**
+     * Option configuration key to specify Levo's Satellite URL.
+     */
+    public static final String LEVO_SATELLITE_URL_CFG_KEY = "LEVO_SATELLITE_URL";
+
+    /**
+     * Extension root configuration menu.
+     */
+    private JMenu cfgMenu;
+
+    /**
+     * Ref on Burp tool to manipulate the HTTP requests and have access to API to identify the source of the
+     * activity (tool name).
+     */
+    private final IBurpExtenderCallbacks callbacks;
+
+    private final AlertWriter alertWriter;
+
+    /**
+     * Constructor.
+     *
+     * @param callbacks      Ref on Burp tool to manipulate the HTTP requests and have access to API to identify the
+     *                       source of the activity (tool name).
+     * @param alertWriter          Ref on alert writer.
+     */
+    public ConfigMenu(IBurpExtenderCallbacks callbacks, AlertWriter alertWriter) {
+        this.callbacks = callbacks;
+        this.alertWriter = alertWriter;
+
+        // Load the save state of the options
+        DEFAULT_LEVO_SATELLITE_URL = this.callbacks.loadExtensionSetting(LEVO_SATELLITE_URL_CFG_KEY);
+        String value = this.callbacks.loadExtensionSetting(ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY);
+        ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.parseBoolean(value);
+        value = this.callbacks.loadExtensionSetting(ENABLE_SENDING_CFG_KEY);
+        IS_SENDING_ENABLED = Boolean.parseBoolean(value);
+    }
+
+    /**
+     * Build the options menu used to configure the extension.
+     */
+    @Override
+    public void run() {
+        this.cfgMenu = new JMenu(EXTENSION_MENU_NAME);
+
+        // Add the menu to enable sending the traffic
+        final JCheckBoxMenuItem subMenuEnableSending =
+                new JCheckBoxMenuItem(EXTENSION_MENU_ENABLE_SEND, IS_SENDING_ENABLED);
+        subMenuEnableSending.addActionListener(new AbstractAction(EXTENSION_MENU_ENABLE_SEND) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (subMenuEnableSending.isSelected()) {
+                    ConfigMenu.this.callbacks.saveExtensionSetting(ENABLE_SENDING_CFG_KEY, Boolean.TRUE.toString());
+                    ConfigMenu.IS_SENDING_ENABLED = Boolean.TRUE;
+                    String satelliteUrl = callbacks.loadExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY);
+                    String msg = "Starting to send the traffic to Levo at address: " + satelliteUrl;
+                    ConfigMenu.this.alertWriter.writeAlert(msg);
+                } else {
+                    ConfigMenu.this.callbacks.saveExtensionSetting(ENABLE_SENDING_CFG_KEY, Boolean.FALSE.toString());
+                    ConfigMenu.IS_SENDING_ENABLED = Boolean.FALSE;
+                    ConfigMenu.this.alertWriter.writeAlert("Stopped sending the traffic to Levo.");
+                }
+            }
+        });
+        this.cfgMenu.add(subMenuEnableSending);
+
+        // Add the sub menu to restrict the sending of requests in defined target scope
+        final JCheckBoxMenuItem subMenuRestrictToScope =
+                new JCheckBoxMenuItem(EXTENSION_MENU_TARGET_SCOPE_ONLY, ONLY_INCLUDE_REQUESTS_FROM_SCOPE);
+
+        subMenuRestrictToScope.addActionListener(new AbstractAction(EXTENSION_MENU_TARGET_SCOPE_ONLY) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (subMenuRestrictToScope.isSelected()) {
+                    ConfigMenu.this.callbacks.saveExtensionSetting(
+                            ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY, Boolean.TRUE.toString());
+                    ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.TRUE;
+                    ConfigMenu.this.alertWriter.writeAlert(
+                            "From now, only traffic from defined target scope will be sent to Levo.");
+                } else {
+                    ConfigMenu.this.callbacks.saveExtensionSetting(
+                            ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY, Boolean.FALSE.toString());
+                    ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.FALSE;
+                    ConfigMenu.this.alertWriter.writeAlert(
+                            "From now, traffic from all targets will be sent to Levo.");
+                }
+            }
+        });
+        this.cfgMenu.add(subMenuRestrictToScope);
+
+        // Add the menu to change Levo's Satellite location
+        // TODO: Commenting this for now since it's not needed in the initial version
+        /*
+        menuText = "Change Levo's Satellite URL";
+        final JMenuItem subMenuSatelliteUrlMenuItem = new JMenuItem(menuText);
+        subMenuSatelliteUrlMenuItem.addActionListener(
+                new AbstractAction(menuText) {
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        try {
+                            String title = "Change Levo's Satellite URL";
+                            if (!ConfigMenu.IS_SENDING_PAUSED) {
+                                JOptionPane.showMessageDialog(ConfigMenu.getBurpFrame(),
+                                        "Sending must be paused prior to updating Levo's Satellite URL!",
+                                        title, JOptionPane.WARNING_MESSAGE);
+                                return;
+                            }
+
+                            String satelliteUrl = callbacks.loadExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY);
+                            httpMessagePublisher.updateSatelliteUrl(satelliteUrl);
+                            callbacks.saveExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY, satelliteUrl);
+                            JOptionPane.showMessageDialog(
+                                    getBurpFrame(),
+                                    "Satellite URL changed to: " + satelliteUrl,
+                                    title,
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        } catch (Exception exp) {
+                            ConfigMenu.this.alertWriter.writeAlert("Cannot update Satellite URL: " + exp.getMessage());
+                        }
+                    }
+                }
+        );
+        this.cfgMenu.add(subMenuSatelliteUrlMenuItem);
+         */
+
+        // Add it to BURP menu
+        JFrame burpFrame = ConfigMenu.getBurpFrame();
+        if (burpFrame != null) {
+            JMenuBar jMenuBar = burpFrame.getJMenuBar();
+            jMenuBar.add(this.cfgMenu);
+            jMenuBar.repaint();
+            this.alertWriter.writeAlert("Levo's configuration menu added.");
+        } else {
+            this.alertWriter.writeAlert("Cannot add Levo's configuration menu (ref on the BURP frame is null).");
+        }
+    }
+
+    /**
+     * Remove the menu from BURP menu bar.
+     *
+     * @see "https://github.com/PortSwigger/param-miner/blob/master/src/burp/Utilities.java"
+     */
+    @Override
+    public void extensionUnloaded() {
+        JFrame burpFrame = ConfigMenu.getBurpFrame();
+        if (burpFrame != null && this.cfgMenu != null) {
+            JMenuBar jMenuBar = burpFrame.getJMenuBar();
+            jMenuBar.remove(this.cfgMenu);
+            jMenuBar.repaint();
+            this.alertWriter.writeAlert("Levo's configuration menu removed.");
+        } else {
+            this.alertWriter.writeAlert("Cannot remove Levo's configuration menu (ref on the BURP frame is null).");
+        }
+    }
+
+    /**
+     * Get a reference on the BURP main frame.
+     *
+     * @return BURP main frame.
+     * @see "https://github.com/PortSwigger/param-miner/blob/master/src/burp/Utilities.java"
+     */
+    public static JFrame getBurpFrame() {
+        for (Frame f : Frame.getFrames()) {
+            if (f.isVisible() && f.getTitle().startsWith(("Burp Suite"))) {
+                return (JFrame) f;
+            }
+        }
+        return null;
+    }
+}

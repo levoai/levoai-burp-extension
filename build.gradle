@@ -1,0 +1,40 @@
+buildscript {
+    ext{
+        odcPluginVersion = project.hasProperty('odcGradlePluginVersion') ? project.getProperty('odcGradlePluginVersion') : '6.3.1'
+    }
+    repositories {
+        mavenCentral()
+    }
+}
+
+apply plugin: 'java'
+
+group 'eu.righettod'
+version '2.0.0'
+def burpExtensionHomepage = 'https://github.com/levoai/levoai-burp-extension'
+def burpExtensionJarName = 'LevoAiBurpExtension.jar'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation('net.portswigger.burp.extender:burp-extender-api:2.3')
+    // retrofit
+    implementation("com.squareup.retrofit2:retrofit:2.1.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.1.0")
+}
+
+compileJava {
+    targetCompatibility '11'
+    sourceCompatibility '11'
+}
+
+task fatJar(type: Jar) {
+    manifest {
+        attributes("Implementation-Version": project.version, "Implementation-Title": project.name, "Implementation-URL": burpExtensionHomepage)
+    }
+    archiveFileName = burpExtensionJarName
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    with jar
+}
