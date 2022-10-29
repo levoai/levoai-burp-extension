@@ -2,10 +2,13 @@ package ai.levo;
 
 import burp.*;
 
+import java.util.Set;
+
 /**
  * Implementation of HTTP activity listener.
  */
 public class HttpMessageListener implements IHttpListener {
+    private static final Set<String> IGNORED_EXTENSIONS = Set.of(".json", ".js", ".html", ".png", ".jpg", ".gif");
 
     /**
      * Ref on handler that will send HTTP messages to Levo's Satellite.
@@ -66,15 +69,20 @@ public class HttpMessageListener implements IHttpListener {
             return false;
         }
 
-        boolean shouldSend = true;
-
         // Check if we must apply restriction about the URL scope
         if (ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE) {
-            shouldSend = this.callbacks.isInScope(reqInfo.getUrl());
-            if (!shouldSend) {
+            if (!this.callbacks.isInScope(reqInfo.getUrl())) {
                 this.alertWriter.writeAlert("Not in scope: " + reqInfo.getUrl().getHost());
+                return false;
             }
         }
-        return shouldSend;
+
+        // Check if we should discard the request based on the path.
+        return shouldSendRequestsWithPath(reqInfo.getUrl().getPath());
+    }
+
+    private boolean shouldSendRequestsWithPath(String path) {
+        // Handle more cases here.
+        return IGNORED_EXTENSIONS.stream().noneMatch(path::endsWith);
     }
 }
