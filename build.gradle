@@ -9,7 +9,7 @@ buildscript {
 
 apply plugin: 'java'
 
-group 'eu.righettod'
+group 'ai.levo'
 version '2.0.0'
 def burpExtensionHomepage = 'https://github.com/levoai/levoai-burp-extension'
 def burpExtensionJarName = 'LevoAiBurpExtension.jar'
