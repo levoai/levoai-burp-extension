@@ -1,0 +1,9 @@
+<p>This extension helps you to create OpenApi specifications for your APIs based on the traffic captured by Burp.</p>
+<p>This extension needs Levo's Satellite service to running at localhost:9999. See <a href="https://docs.levo.ai/api-observability/install-guide/install-satellite#install-on-linux-host-via-docker-compose">Levo docs</a> for instructions on how to run Satellite with docker compose.</p>
+<p>Once you have the Satellite service, this extension sends all the JSON based HTTP request and responses to Levo's Satellite, which builds specs and uploads them to Levo SaaS. All your data is dropped on the Satellite host itself and <b>not sent to Levo's SaaS</b>.</p>
+
+<p>There are the following configuration options in the menu bar:</p>
+<ul>
+    <li>Send only requests from defined target scope.</li>
+    <li>Pause sending the traffic to Levo's Satellite.</li>
+</ul>

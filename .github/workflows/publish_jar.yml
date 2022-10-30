@@ -1,0 +1,37 @@
+name: Publish extension jar
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [11, 12, 13, 14, 15]
+
+    steps:
+      - name: JDK ${{ matrix.java }} - Checkout sources
+        uses: actions/checkout@v2.3.4
+
+      - name: JDK ${{ matrix.java }} - Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          java-version: ${{ matrix.java }}
+          architecture: x64
+
+      - name: JDK ${{ matrix.java }} - Setup Gradle and build JAR file
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: fatJar --no-daemon
+        env:
+          JAVA_OPTS: ${{ env.JAVA_OPTS }}
+
+      - name: JDK ${{ matrix.java }} - Upload artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: NightBuild-JDK-${{ matrix.java }}
+          path: build/libs/LevoBurpPlugin.jar
