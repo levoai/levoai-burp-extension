@@ -32,10 +32,8 @@ jobs:
         env:
           JAVA_OPTS: ${{ env.JAVA_OPTS }}
 
-      - run: ls -l build/libs
-
       - name: JDK ${{ matrix.java }} - Upload artifact
         uses: actions/upload-artifact@v1
         with:
           name: NightBuild-JDK-${{ matrix.java }}
-          path: build/libs/LevoBurpPlugin.jar
+          path: build/libs/LevoAiBurpExtension.jar
