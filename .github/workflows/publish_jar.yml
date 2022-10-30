@@ -1,6 +1,7 @@
 name: Publish extension jar
 
 on:
+  pull_request:
   push:
     branches: [ main ]
   schedule:
@@ -22,6 +23,7 @@ jobs:
         with:
           java-version: ${{ matrix.java }}
           architecture: x64
+          distribution: 'adopt'
 
       - name: JDK ${{ matrix.java }} - Setup Gradle and build JAR file
         uses: gradle/gradle-build-action@v2
