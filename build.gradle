@@ -21,7 +21,7 @@ repositories {
 dependencies {
     implementation('net.portswigger.burp.extender:burp-extender-api:2.3')
     // retrofit
-    implementation("com.squareup.retrofit2:retrofit:2.1.0")
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.1.0")
 }
 
