@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        java: [11, 12, 13, 14, 15]
+        java: [11, 15, 18]
 
     steps:
       - name: JDK ${{ matrix.java }} - Checkout sources
@@ -31,6 +31,8 @@ jobs:
           arguments: fatJar --no-daemon
         env:
           JAVA_OPTS: ${{ env.JAVA_OPTS }}
+
+      - run: ls -l build/libs
 
       - name: JDK ${{ matrix.java }} - Upload artifact
         uses: actions/upload-artifact@v1
