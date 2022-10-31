@@ -3,12 +3,17 @@ package ai.levo;
 import burp.*;
 
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Implementation of HTTP activity listener.
  */
 public class HttpMessageListener implements IHttpListener {
-    private static final Set<String> IGNORED_EXTENSIONS = Set.of(".json", ".js", ".html", ".png", ".jpg", ".gif");
+    private static final String COMMA_SEPARATED_EXTENSIONS =
+            "css,ico,gif,jpg,jpeg,png,bmp,svg,avi,mpg,mpeg,mp3,m3u8,woff,woff2,ttf,eot,mp3,mp4,wav,mpg,mpeg,avi,mov,wmv,doc,xls,pdf,zip,tar,7z,rar,tgz,gz,exe,rtp";
+    private static final Set<String> IGNORED_EXTENSIONS =
+            Stream.of(COMMA_SEPARATED_EXTENSIONS.split(",")).map(s -> "." + s).collect(Collectors.toSet());
 
     /**
      * Ref on handler that will send HTTP messages to Levo's Satellite.
@@ -41,6 +46,12 @@ public class HttpMessageListener implements IHttpListener {
     @Override
     public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse message) {
         if (messageIsRequest) {
+            return;
+        }
+
+        String toolName = callbacks.getToolName(toolFlag);
+        // For now only process proxy's traffic.
+        if (!"TOOL_PROXY".equalsIgnoreCase(toolName)) {
             return;
         }
 
