@@ -8,9 +8,11 @@ buildscript {
 }
 
 apply plugin: 'java'
+apply plugin: 'maven-publish'
 
 group 'ai.levo'
-version '2.0.0'
+version '0.1.0'
+
 def burpExtensionHomepage = 'https://github.com/levoai/levoai-burp-extension'
 def burpExtensionJarName = 'LevoAiBurpExtension.jar'
 
@@ -37,4 +39,22 @@ task fatJar(type: Jar) {
     archiveFileName = burpExtensionJarName
     from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
     with jar
+}
+
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/levoai/levoai-burp-extension")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
+    publications {
+        gpr(MavenPublication) {
+            from(components.java)
+        }
+    }
 }
