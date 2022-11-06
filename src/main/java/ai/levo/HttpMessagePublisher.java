@@ -69,14 +69,14 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             return;
         }
 
-        this.alertWriter.writeAlert("Sending the HTTP message for: "
-                + reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath() + " to Levo's Satellite.");
-
         Call<ResponseBody> callSync = levoSatelliteService.sendHttpMessage(httpMessage);
         try {
             Response<ResponseBody> response = callSync.execute();
             if (!response.isSuccessful()) {
-                this.alertWriter.writeAlert("Cannot send HTTP message to Levo: " + response.errorBody().string());
+                this.alertWriter.writeAlert("Cannot send HTTP message to Levo. StatusCode: " + response.code());
+            } else {
+                this.alertWriter.writeAlert("Sent the HTTP message for: "
+                        + reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath() + " to Levo's Satellite.");
             }
         } catch (Exception ex) {
             this.alertWriter.writeAlert("Cannot send HTTP message to Levo: " + ex.getMessage());
@@ -113,9 +113,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
         String requestBody = callbacks.getHelpers().bytesToString(reqContent);
         String[] parts = requestBody.split(TWO_LINES_PATTERN);
-        if (parts.length < 1) {
-            return null;
-        } else if (parts.length > 1 && parts[1].length() > 0) {
+        if (parts.length > 1 && parts[1].length() > 0) {
             // Base64 encode the body.
             request.setBody(callbacks.getHelpers().base64Encode(parts[1]));
         } else {
@@ -125,21 +123,18 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         HttpMessage.Response response = new HttpMessage.Response();
         String responseBody = callbacks.getHelpers().bytesToString(resContent);
         parts = responseBody.split(TWO_LINES_PATTERN);
-        if (parts.length < 1) {
-            return null;
-        } else if (parts.length > 1 && parts[1].length() > 0) {
+        if (parts.length > 1 && parts[1].length() > 0) {
             // Base64 encode the response body.
             response.setBody(callbacks.getHelpers().base64Encode(parts[1]));
         } else {
+            // Don't drop the message if the response body is empty.
             response.setBody("");
         }
 
         // Create response headers from the first part of the response. Ignore the status line.
         String[] responseHeaders = parts[0].split(NEW_LINE_PATTERN);
-        if (responseHeaders.length < 1) {
-            return null;
-        } else if (responseHeaders.length > 1) {
-            // Create a list from an array and remove the first element.
+        if (responseHeaders.length > 1) {
+            // Create a list from an array and remove the first element since that's status line.
             List<String> headers = java.util.Arrays.asList(responseHeaders);
             headers = headers.subList(1, headers.size());
             response.setHeaders(convertHeadersToMap(headers));
