@@ -1,18 +1,25 @@
 # Levo Burp Extension
-Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII and annotate specs with
-the PII details.
+Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII,
+and annotate specs with the PII details.
 
 **How does that work?**
-* Bring up Levo's Satellite service locally using Docker compose. 
-  Docs: https://docs.levo.ai/api-observability/install-guide/install-satellite#install-on-linux-host-via-docker-compose
+* Create a free-forever account on [Levo.ai](https://levo.ai). No credit card required.
+* Login to Levo at https://app.levo.ai and copy Levo's auth key from the user profile in the top right.
+
+  `User profile -> User settings -> Keys -> Get Satellite Authorization Key`
+
+* Bring up Levo's Satellite service locally using this docker run command.
+
+  `docker run -p 9999:9999 -e LEVOAI_AUTH_KEY=<auth key from Levo.ai> levoai/satellite-single-node`
+
 * Turn on sending traffic to Levo in Burp using config menu
 * Start using Burp like you normally do. Extension sends the API traffic (only few valid content types are supported)
   to Levo's Satellite
-* Levo's Satellite that's running locally will process the traffic, sends **OpenApi** specs to Levo's cloud service.
+* Levo's Satellite processes the traffic, extracts API specs and sends them to Levo's SaaS.
   You can view the specs in Levo's UI.
-* PII detection also fully runs locally in Satellite and only the PII types are sent to Levo's cloud service.
+* PII detection also fully runs locally in Satellite and only the PII types are sent to Levo's SaaS.
   You can view the PII types in Levo's UI.
-* **None of your API data is sent to Levo's cloud service. Only OpenApi specs are sent to Levo's cloud service.**
+* **None of your API data is sent to Levo's cloud service. Only API specs are sent.**
 
 ## Options
 
