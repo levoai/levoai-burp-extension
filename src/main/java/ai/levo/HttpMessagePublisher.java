@@ -94,7 +94,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             }
         }
 
-        this.alertWriter.writeAlert("Not sending content-type: " + contentType + " to Levo.");
+        //this.alertWriter.writeAlert("Not sending content-type: " + contentType + " to Levo.");
         return true;
     }
 
