@@ -8,9 +8,13 @@ import javax.swing.SwingUtilities;
 
 public class BurpExtender implements IBurpExtender {
     private static final String EXTENSION_NAME = "Levo.ai";
-
+    private static IBurpExtenderCallbacks callbacks;
+    public static IBurpExtenderCallbacks getCallbacks() {
+        return callbacks;
+    }
     @Override
     public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks) {
+        this.callbacks = callbacks;
         ConfigMenu configMenu = null;
         JFrame burpFrame = ConfigMenu.getBurpFrame();
         try {
@@ -34,7 +38,8 @@ public class BurpExtender implements IBurpExtender {
             }
 
             // Init publisher and HTTP listener
-            HttpMessagePublisher httpMessagePublisher = new HttpMessagePublisher(satelliteUrl, alertWriter, callbacks);
+            HttpMessagePublisher httpMessagePublisher =
+                    new HttpMessagePublisher(LevoSatelliteService.create(satelliteUrl, callbacks), alertWriter, callbacks);
             HttpMessageListener httpListener = new HttpMessageListener(httpMessagePublisher, alertWriter, callbacks);
 
             // Set up the configuration menu

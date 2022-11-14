@@ -1,15 +1,10 @@
 package ai.levo;
 
-import burp.IBurpExtenderCallbacks;
-import burp.IExtensionStateListener;
-import burp.IRequestInfo;
-import okhttp3.OkHttpClient;
-import okhttp3.ResponseBody;
-import retrofit2.Call;
-import retrofit2.Response;
-import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
+import ai.levo.exceptions.SatelliteMessageFailed;
+import burp.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
+import java.io.UnsupportedEncodingException;
 import java.util.*;
 
 /**
@@ -35,26 +30,19 @@ public class HttpMessagePublisher implements IExtensionStateListener {
      */
     private final AlertWriter alertWriter;
 
-    private final LevoSatelliteService levoSatelliteService;
+    private final LevoSatelliteService satelliteService;
 
     /**
      * Constructor.
      *
-     * @param satelliteUrl Levo's Satellite URL
+     * @param satelliteService Levo's Satellite Service
      * @param alertWriter Ref on alert writer.
      * @param callbacks callbacks
      */
-    public HttpMessagePublisher(String satelliteUrl, AlertWriter alertWriter, IBurpExtenderCallbacks callbacks) {
+    public HttpMessagePublisher(LevoSatelliteService satelliteService, AlertWriter alertWriter, IBurpExtenderCallbacks callbacks) {
         this.alertWriter = alertWriter;
         this.callbacks = callbacks;
-
-        OkHttpClient.Builder httpClient = new OkHttpClient.Builder();
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(satelliteUrl)
-                .addConverterFactory(GsonConverterFactory.create())
-                .client(httpClient.build())
-                .build();
-        levoSatelliteService = retrofit.create(LevoSatelliteService.class);
+        this.satelliteService = satelliteService;
     }
 
     /**
@@ -63,7 +51,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
      * @param reqInfo    Details of the request to be processed.
      * @param reqContent Raw content of the request.
      */
-    void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) {
+    void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) throws UnsupportedEncodingException {
         HttpMessage httpMessage = convertToHttpMessage(reqInfo, reqContent, statusCode, resContent);
         if (httpMessage == null) {
             return;
@@ -72,14 +60,12 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         this.alertWriter.writeAlert("Sending the HTTP message for: "
                 + reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath() + " to Levo's Satellite.");
 
-        Call<ResponseBody> callSync = levoSatelliteService.sendHttpMessage(httpMessage);
         try {
-            Response<ResponseBody> response = callSync.execute();
-            if (!response.isSuccessful()) {
-                this.alertWriter.writeAlert("Cannot send HTTP message to Levo: " + response.errorBody().string());
-            }
-        } catch (Exception ex) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo: " + ex.getMessage());
+            satelliteService.sendHttpMessage(httpMessage);
+        } catch (SatelliteMessageFailed e) {
+            this.alertWriter.writeAlert("Cannot send HTTP message to Levo. Status code("+ e.getStatusCode() +"): " + e.getMessage());
+        } catch (JsonProcessingException e) {
+            this.alertWriter.writeAlert("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
         }
     }
 

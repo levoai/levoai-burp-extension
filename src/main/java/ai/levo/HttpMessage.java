@@ -1,6 +1,6 @@
 package ai.levo;
 
-import com.google.gson.annotations.SerializedName;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
 
@@ -105,31 +105,31 @@ public class HttpMessage {
      */
     private Map<String, String> resource;
 
-    @SerializedName("local_net")
+    @JsonProperty("local_net")
     private Net localNet;
 
-    @SerializedName("remote_net")
+    @JsonProperty("remote_net")
     private Net remoteNet;
 
-    @SerializedName("trace_id")
+    @JsonProperty("trace_id")
     private String traceId;
 
-    @SerializedName("span_id")
+    @JsonProperty("span_id")
     private String spanId;
 
-    @SerializedName("span_kind")
+    @JsonProperty("span_kind")
     private String spanKind;
 
     /**
      * Time taken by the request to be processed by the service.
      */
-    @SerializedName("duration_ns")
+    @JsonProperty("duration_ns")
     private long durationNs;
 
     /**
      * Current timestamp in nanoseconds (Unix time) when the request was sent.
      */
-    @SerializedName("request_time_ns")
+    @JsonProperty("request_time_ns")
     private long requestTimeNs;
 
     public Request getRequest() {
