@@ -11,7 +11,7 @@ import java.util.stream.Stream;
  */
 public class HttpMessageListener implements IHttpListener {
     private static final String COMMA_SEPARATED_EXTENSIONS =
-            "css,ico,gif,jpg,jpeg,png,bmp,svg,avi,mpg,mpeg,mp3,m3u8,woff,woff2,ttf,eot,mp3,mp4,wav,mpg,mpeg,avi,mov,wmv,doc,xls,pdf,zip,tar,7z,rar,tgz,gz,exe,rtp";
+            "css,ico,gif,jpg,jpeg,png,bmp,svg,avi,mpg,mpeg,mp3,m3u8,woff,woff2,ttf,eot,mp3,mp4,wav,mpg,mpeg,avi,mov,wmv,doc,xls,pdf,zip,tar,7z,rar,tgz,gz,exe,rtp,js";
     private static final Set<String> IGNORED_EXTENSIONS =
             Stream.of(COMMA_SEPARATED_EXTENSIONS.split(",")).map(s -> "." + s).collect(Collectors.toSet());
 
@@ -83,7 +83,6 @@ public class HttpMessageListener implements IHttpListener {
         // Check if we must apply restriction about the URL scope
         if (ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE) {
             if (!this.callbacks.isInScope(reqInfo.getUrl())) {
-                this.alertWriter.writeAlert("Not in scope: " + reqInfo.getUrl().getHost());
                 return false;
             }
         }
