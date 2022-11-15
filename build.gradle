@@ -11,7 +11,7 @@ apply plugin: 'java'
 apply plugin: 'maven-publish'
 
 group 'ai.levo'
-version '0.1.4'
+version '0.1.5'
 
 def burpExtensionHomepage = 'https://github.com/levoai/levoai-burp-extension'
 def burpExtensionJarName = 'LevoAiBurpExtension.jar'
@@ -22,9 +22,7 @@ repositories {
 
 dependencies {
     implementation('net.portswigger.burp.extender:burp-extender-api:2.3')
-    // retrofit
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation('com.fasterxml.jackson.core:jackson-databind:2.12.3')
 }
 
 compileJava {
@@ -33,6 +31,7 @@ compileJava {
 }
 
 task fatJar(type: Jar) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes("Implementation-Version": project.version, "Implementation-Title": project.name, "Implementation-URL": burpExtensionHomepage)
     }
