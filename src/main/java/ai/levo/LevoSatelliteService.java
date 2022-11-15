@@ -22,11 +22,16 @@ public class LevoSatelliteService {
     private final IExtensionHelpers helpers;
     private final IBurpExtenderCallbacks callbacks;
 
-    private final IHttpService service;
+    private IHttpService service;
 
     public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
+        var url = new URL(satelliteUrl);
+        this.service = helpers.buildHttpService(url.getHost(), url.getPort(), url.getProtocol().equals("https"));
+    }
+
+    public void updateSatelliteUrl(String satelliteUrl) throws MalformedURLException {
         var url = new URL(satelliteUrl);
         this.service = helpers.buildHttpService(url.getHost(), url.getPort(), url.getProtocol().equals("https"));
     }

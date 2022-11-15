@@ -6,6 +6,8 @@ import burp.IExtensionStateListener;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.net.MalformedURLException;
+import java.net.URL;
 
 /**
  * Menu to configure the extension options.
@@ -16,6 +18,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
     private static final String EXTENSION_MENU_NAME = "Levo.ai";
     private static final String EXTENSION_MENU_TARGET_SCOPE_ONLY = "Send only traffic from defined target scope";
     private static final String EXTENSION_MENU_ENABLE_SEND = "Send traffic to Levo";
+    private static final String EXTENSION_MENU_CONFIGURE_URL = "Change Levo's Satellite URL";
 
     /**
      * Expose the configuration option for the restriction of the sending of requests in defined target scope.
@@ -60,16 +63,20 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
 
     private final AlertWriter alertWriter;
 
+    private final LevoSatelliteService levoSatelliteService;
+
     /**
      * Constructor.
      *
      * @param callbacks      Ref on Burp tool to manipulate the HTTP requests and have access to API to identify the
      *                       source of the activity (tool name).
      * @param alertWriter          Ref on alert writer.
+     * @param levoSatelliteService Levo Satellite service
      */
-    public ConfigMenu(IBurpExtenderCallbacks callbacks, AlertWriter alertWriter) {
+    public ConfigMenu(IBurpExtenderCallbacks callbacks, AlertWriter alertWriter, LevoSatelliteService levoSatelliteService) {
         this.callbacks = callbacks;
         this.alertWriter = alertWriter;
+        this.levoSatelliteService = levoSatelliteService;
 
         // Load the save state of the options
         DEFAULT_LEVO_SATELLITE_URL = this.callbacks.loadExtensionSetting(LEVO_SATELLITE_URL_CFG_KEY);
@@ -132,39 +139,51 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
         this.cfgMenu.add(subMenuRestrictToScope);
 
         // Add the menu to change Levo's Satellite location
-        // TODO: Commenting this for now since it's not needed in the initial version
-        /*
-        menuText = "Change Levo's Satellite URL";
-        final JMenuItem subMenuSatelliteUrlMenuItem = new JMenuItem(menuText);
-        subMenuSatelliteUrlMenuItem.addActionListener(
-                new AbstractAction(menuText) {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        try {
-                            String title = "Change Levo's Satellite URL";
-                            if (!ConfigMenu.IS_SENDING_PAUSED) {
-                                JOptionPane.showMessageDialog(ConfigMenu.getBurpFrame(),
-                                        "Sending must be paused prior to updating Levo's Satellite URL!",
-                                        title, JOptionPane.WARNING_MESSAGE);
-                                return;
-                            }
-
-                            String satelliteUrl = callbacks.loadExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY);
-                            httpMessagePublisher.updateSatelliteUrl(satelliteUrl);
-                            callbacks.saveExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY, satelliteUrl);
-                            JOptionPane.showMessageDialog(
-                                    getBurpFrame(),
-                                    "Satellite URL changed to: " + satelliteUrl,
-                                    title,
-                                    JOptionPane.INFORMATION_MESSAGE);
-                        } catch (Exception exp) {
-                            ConfigMenu.this.alertWriter.writeAlert("Cannot update Satellite URL: " + exp.getMessage());
-                        }
+        final JMenuItem subMenuSatelliteUrlMenuItem = new JMenuItem(EXTENSION_MENU_CONFIGURE_URL);
+        subMenuSatelliteUrlMenuItem.addActionListener(new AbstractAction(EXTENSION_MENU_CONFIGURE_URL) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String satelliteUrl = callbacks.loadExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY);
+                try {
+                    String title = EXTENSION_MENU_CONFIGURE_URL;
+                    if (ConfigMenu.IS_SENDING_ENABLED) {
+                        JOptionPane.showMessageDialog(ConfigMenu.getBurpFrame(),
+                                "Sending must be paused prior to updating Levo's Satellite URL!",
+                                title, JOptionPane.WARNING_MESSAGE);
+                        return;
                     }
+
+                    String msg = "Please enter the URL of Levo's Satellite:";
+                    String newSatelliteUrl = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE, null, null, satelliteUrl).toString();
+                    if (newSatelliteUrl == null || newSatelliteUrl.isEmpty()) {
+                        JOptionPane.showMessageDialog(
+                                getBurpFrame(),
+                                "Satellite URL can't be empty. Keeping current value: " + satelliteUrl,
+                                title,
+                                JOptionPane.INFORMATION_MESSAGE);
+                        return;
+                    }
+                    // Validate the URL
+                    new URL(newSatelliteUrl);
+                    levoSatelliteService.updateSatelliteUrl(newSatelliteUrl);
+                    callbacks.saveExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY, newSatelliteUrl);
+                    JOptionPane.showMessageDialog(
+                            getBurpFrame(),
+                            "Satellite URL changed to: " + newSatelliteUrl,
+                            title,
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (MalformedURLException exp) {
+                    JOptionPane.showMessageDialog(
+                            getBurpFrame(),
+                            "Invalid URL format for Satellite URL. Keeping current value: " + satelliteUrl,
+                            EXTENSION_MENU_CONFIGURE_URL,
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception exp) {
+                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Satellite URL: " + exp.getMessage());
                 }
-        );
+            }
+        });
         this.cfgMenu.add(subMenuSatelliteUrlMenuItem);
-         */
 
         // Add it to BURP menu
         JFrame burpFrame = ConfigMenu.getBurpFrame();
@@ -210,4 +229,15 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
         }
         return null;
     }
+
+    // Create a dialog to update satellite url string
+    private void updateSatelliteUrl(String satelliteUrl) {
+        String title = EXTENSION_MENU_CONFIGURE_URL;
+        String msg = "Please enter the URL of Levo's Satellite:";
+        String newSatelliteUrl = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE);
+        if (newSatelliteUrl != null && !newSatelliteUrl.isEmpty()) {
+            satelliteUrl = newSatelliteUrl;
+        }
+    }
+
 }
