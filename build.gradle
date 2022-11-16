@@ -11,7 +11,7 @@ apply plugin: 'java'
 apply plugin: 'maven-publish'
 
 group 'ai.levo'
-version '0.1.5'
+version '0.1.6'
 
 def burpExtensionHomepage = 'https://github.com/levoai/levoai-burp-extension'
 def burpExtensionJarName = 'LevoAiBurpExtension.jar'
