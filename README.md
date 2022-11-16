@@ -49,6 +49,9 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
 
 # Changelog
 
+**0.1.6**
+ * Allowing Levo's Satellite URL address to be configured in the config menu. Default is http://localhost:9999
+
 **0.1.0**
  * Initial release of Levo's Burp extension builds OpenApi specifications for your APIs based on Burp HTTP traffic.
  * Detects and classifies PII in the traffic and annotates the OpenApi specs with the PII details.

@@ -12,6 +12,7 @@ public class BurpExtender implements IBurpExtender {
     public static IBurpExtenderCallbacks getCallbacks() {
         return callbacks;
     }
+
     @Override
     public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks) {
         this.callbacks = callbacks;
@@ -37,13 +38,15 @@ public class BurpExtender implements IBurpExtender {
                 callbacks.issueAlert("Sending traffic to Levo's Satellite is paused.");
             }
 
+            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, callbacks);
+
             // Init publisher and HTTP listener
             HttpMessagePublisher httpMessagePublisher =
-                    new HttpMessagePublisher(LevoSatelliteService.create(satelliteUrl, callbacks), alertWriter, callbacks);
+                    new HttpMessagePublisher(levoSatelliteService, alertWriter, callbacks);
             HttpMessageListener httpListener = new HttpMessageListener(httpMessagePublisher, alertWriter, callbacks);
 
             // Set up the configuration menu
-            configMenu = new ConfigMenu(callbacks, alertWriter);
+            configMenu = new ConfigMenu(callbacks, alertWriter, levoSatelliteService);
             SwingUtilities.invokeLater(configMenu);
 
             // Register all listeners
