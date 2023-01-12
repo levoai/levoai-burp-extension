@@ -51,7 +51,7 @@ public class HttpMessageListener implements IHttpListener {
 
         String toolName = callbacks.getToolName(toolFlag);
         // For now only process proxy's traffic.
-        if (!"Proxy".equalsIgnoreCase(toolName)) {
+        if (!"Proxy".equalsIgnoreCase(toolName) && !"Repeater".equalsIgnoreCase(toolName)) {
             return;
         }
 
