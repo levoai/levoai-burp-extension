@@ -14,6 +14,7 @@ public class HttpMessageListener implements IHttpListener {
             "css,ico,gif,jpg,jpeg,png,bmp,svg,avi,mpg,mpeg,mp3,m3u8,woff,woff2,ttf,eot,mp3,mp4,wav,mpg,mpeg,avi,mov,wmv,doc,xls,pdf,zip,tar,7z,rar,tgz,gz,exe,rtp,js";
     private static final Set<String> IGNORED_EXTENSIONS =
             Stream.of(COMMA_SEPARATED_EXTENSIONS.split(",")).map(s -> "." + s).collect(Collectors.toSet());
+    private static final Set<String> SUPPORTED_TOOL_NAMES = Set.of("repeater", "target", "suite", "proxy");
 
     /**
      * Ref on handler that will send HTTP messages to Levo's Satellite.
@@ -50,8 +51,8 @@ public class HttpMessageListener implements IHttpListener {
         }
 
         String toolName = callbacks.getToolName(toolFlag);
-        // For now only process proxy's traffic.
-        if (!"Proxy".equalsIgnoreCase(toolName) && !"Repeater".equalsIgnoreCase(toolName)) {
+        // Ignore if we don't support the tool from which the traffic is coming.
+        if (!SUPPORTED_TOOL_NAMES.contains(toolName.toLowerCase())) {
             return;
         }
 
