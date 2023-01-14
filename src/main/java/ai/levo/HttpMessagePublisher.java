@@ -51,7 +51,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
      * @param reqInfo    Details of the request to be processed.
      * @param reqContent Raw content of the request.
      */
-    void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) throws UnsupportedEncodingException {
+    void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) {
         HttpMessage httpMessage = convertToHttpMessage(reqInfo, reqContent, statusCode, resContent);
         if (httpMessage == null) {
             return;

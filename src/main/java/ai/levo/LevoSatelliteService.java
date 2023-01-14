@@ -23,17 +23,28 @@ public class LevoSatelliteService {
     private final IBurpExtenderCallbacks callbacks;
 
     private IHttpService service;
+    private String hostHeader;
 
     public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
         var url = new URL(satelliteUrl);
-        this.service = helpers.buildHttpService(url.getHost(), url.getPort(), url.getProtocol().equals("https"));
+        var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+        this.hostHeader = url.getHost() + ":" + port;
+        this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
     }
 
     public void updateSatelliteUrl(String satelliteUrl) throws MalformedURLException {
+        if (satelliteUrl == null || satelliteUrl.isEmpty()) {
+            return;
+        }
         var url = new URL(satelliteUrl);
-        this.service = helpers.buildHttpService(url.getHost(), url.getPort(), url.getProtocol().equals("https"));
+        // Update the service if host is not empty
+        if (url.getHost() != null && !url.getHost().isEmpty()) {
+            var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+            this.hostHeader = url.getHost() + ":" + port;
+            this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
+        }
     }
 
     public IHttpRequestResponse sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
@@ -42,6 +53,8 @@ public class LevoSatelliteService {
         byte[] body = helpers.stringToBytes(jsonBody);
         List<String> newHeaders = new ArrayList<>();
         newHeaders.add("POST /1.0/ebpf/traces HTTP/1.1");
+        // Set the host header explicitly since the host is being set as null sometimes.
+        newHeaders.add("Host: " + hostHeader);
         var message = helpers.buildHttpMessage(newHeaders, body);
         var requestResponse = this.callbacks.makeHttpRequest(service, message, false);
 
