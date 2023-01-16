@@ -2,8 +2,12 @@
 Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII,
 and annotate specs with the PII details.
 
-**How does that work?**
+## How does this work?
+**In Levo's SaaS UI**
 * Create a free-forever account on [Levo.ai](https://levo.ai). No credit card required.
+* Pick one of these two options based on whether you're okay sending API traffic to Levo's cloud or not.
+
+***Running Levo's Satellite locally so that you don't send API traffic to Levo's cloud***
 * Login to Levo at https://app.levo.ai and copy Levo's auth key from the user profile in the top right.
 
   `User profile -> User settings -> Keys -> Get Satellite Authorization Key`
@@ -12,6 +16,12 @@ and annotate specs with the PII details.
 
   `docker run -p 9999:9999 -e LEVOAI_AUTH_KEY=<auth key from Levo.ai> levoai/satellite-single-node`
 
+***Get the Satellite URL from Levo's cloud***
+* Start a Satellite from Levo's SaaS UI and copy the URL.
+
+    `Settings -> Organization -> Satellite`
+
+**In Burp**
 * Turn on sending traffic to Levo in Burp using config menu
 * Start using Burp like you normally do. Extension sends the API traffic (only few valid content types are supported)
   to Levo's Satellite
@@ -31,8 +41,6 @@ You can limit the scope to target scopes only by enabling the option in the conf
 By default, the traffic isn't sent to Levo. You can enable it using the config menu.
 
 ## Possible improvements
-* Supporting remote Satellite so that teams can have a central Satellite hosted in their VPC.
-* Making Levo's Satellite optional. Levo can host the Satellite provided user is comfortable with that option.
 * Showing the OpenApi specs and PII types in Burp UI.
 * Allow triggering Levo security testing from Burp UI.
 
@@ -48,6 +56,11 @@ $ gradlew clean fatJar
 Nightly build publishes the jar as an artifact in this repo. You can download and use it directly with Burp.
 
 # Changelog
+
+**0.1.7**
+ * Fixed bugs in setting Levo's Satellite URL correctly.
+ * We also now support sending traffic to Levo's Satellite running in Levo's SaaS. Login to Levo's SaaS UI
+   and get the Satellite URL from Settings -> Organization -> Satellite.
 
 **0.1.6**
  * Allowing Levo's Satellite URL address to be configured in the config menu. Default is http://localhost:9999
