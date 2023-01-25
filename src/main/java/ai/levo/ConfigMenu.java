@@ -154,8 +154,13 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                     }
 
                     String msg = "Please enter the URL of Levo's Satellite:";
-                    String newSatelliteUrl = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE, null, null, satelliteUrl).toString();
-                    if (newSatelliteUrl == null || newSatelliteUrl.isEmpty()) {
+                    Object newSatelliteUrlInputResponse = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE, null, null, satelliteUrl);
+                    // Input response is null if the user cancels the dialog
+                    if (newSatelliteUrlInputResponse == null) {
+                        return;
+                    }
+                    String newSatelliteUrl = newSatelliteUrlInputResponse.toString();
+                    if (newSatelliteUrl.isEmpty()) {
                         JOptionPane.showMessageDialog(
                                 getBurpFrame(),
                                 "Satellite URL can't be empty. Keeping current value: " + satelliteUrl,
