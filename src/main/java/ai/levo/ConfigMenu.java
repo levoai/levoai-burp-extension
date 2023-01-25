@@ -154,8 +154,13 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                     }
 
                     String msg = "Please enter the URL of Levo's Satellite:";
-                    String newSatelliteUrl = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE, null, null, satelliteUrl).toString();
-                    if (newSatelliteUrl == null || newSatelliteUrl.isEmpty()) {
+                    Object newSatelliteUrlInputResponse = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE, null, null, satelliteUrl);
+                    // Input response is null if the user cancels the dialog
+                    if (newSatelliteUrlInputResponse == null) {
+                        return;
+                    }
+                    String newSatelliteUrl = newSatelliteUrlInputResponse.toString();
+                    if (newSatelliteUrl.isEmpty()) {
                         JOptionPane.showMessageDialog(
                                 getBurpFrame(),
                                 "Satellite URL can't be empty. Keeping current value: " + satelliteUrl,
@@ -191,7 +196,6 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             JMenuBar jMenuBar = burpFrame.getJMenuBar();
             jMenuBar.add(this.cfgMenu);
             jMenuBar.repaint();
-            this.alertWriter.writeAlert("Levo's configuration menu added.");
         } else {
             this.alertWriter.writeAlert("Cannot add Levo's configuration menu (ref on the BURP frame is null).");
         }
@@ -209,7 +213,6 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             JMenuBar jMenuBar = burpFrame.getJMenuBar();
             jMenuBar.remove(this.cfgMenu);
             jMenuBar.repaint();
-            this.alertWriter.writeAlert("Levo's configuration menu removed.");
         } else {
             this.alertWriter.writeAlert("Cannot remove Levo's configuration menu (ref on the BURP frame is null).");
         }
