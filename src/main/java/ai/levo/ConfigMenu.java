@@ -196,7 +196,6 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             JMenuBar jMenuBar = burpFrame.getJMenuBar();
             jMenuBar.add(this.cfgMenu);
             jMenuBar.repaint();
-            this.alertWriter.writeAlert("Levo's configuration menu added.");
         } else {
             this.alertWriter.writeAlert("Cannot add Levo's configuration menu (ref on the BURP frame is null).");
         }
@@ -214,7 +213,6 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             JMenuBar jMenuBar = burpFrame.getJMenuBar();
             jMenuBar.remove(this.cfgMenu);
             jMenuBar.repaint();
-            this.alertWriter.writeAlert("Levo's configuration menu removed.");
         } else {
             this.alertWriter.writeAlert("Cannot remove Levo's configuration menu (ref on the BURP frame is null).");
         }
