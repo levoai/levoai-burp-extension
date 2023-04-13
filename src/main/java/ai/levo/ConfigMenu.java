@@ -20,6 +20,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
     private static final String EXTENSION_MENU_ENABLE_SEND = "Send traffic to Levo";
     private static final String EXTENSION_MENU_CONFIGURE_URL = "Set custom Levo's Satellite URL";
     private static final String EXTENSION_MENU_CONFIGURE_ORGANIZATION = "Set Levo Organization Id";
+    private static final String DEFAULT_LEVO_SATELLITE_URL = "https://collector.levo.ai";
 
     /**
      * Expose the configuration option for the restriction of the sending of requests in defined target scope.
@@ -32,14 +33,15 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
     static volatile boolean IS_SENDING_ENABLED = Boolean.FALSE;
 
     /**
-     * Default value of the Levo's Satellite URL.
+     * Expose the configuration option to allow the user to configure Levo Satellite URL.
      */
-    public static volatile String DEFAULT_LEVO_SATELLITE_URL = "https://collector.levo.ai";
+    public static volatile String LEVO_SATELLITE_URL = DEFAULT_LEVO_SATELLITE_URL;
+
 
     /**
-     * Default value of the Levo's Satellite URL.
+     * Expose the configuration option to allow the user to configure Levo Organization Id.
      */
-    public static volatile String DEFAULT_LEVO_ORGANIZATION_ID = null;
+    public static volatile String LEVO_ORGANIZATION_ID = null;
 
 
     /**
@@ -92,10 +94,10 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
 
         // Load the save state of the options
         String value = this.callbacks.loadExtensionSetting(LEVO_SATELLITE_URL_CFG_KEY);
-        if (value != null) {
-            DEFAULT_LEVO_SATELLITE_URL = value;
+        if (value != null || !value.isEmpty()) {
+            LEVO_SATELLITE_URL = value;
         }
-        DEFAULT_LEVO_ORGANIZATION_ID = this.callbacks.loadExtensionSetting(LEVO_ORGANIZATION_ID_CFG_KEY);
+        LEVO_ORGANIZATION_ID = this.callbacks.loadExtensionSetting(LEVO_ORGANIZATION_ID_CFG_KEY);
         value = this.callbacks.loadExtensionSetting(ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY);
         ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.parseBoolean(value);
         value = this.callbacks.loadExtensionSetting(ENABLE_SENDING_CFG_KEY);

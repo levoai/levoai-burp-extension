@@ -15,8 +15,8 @@ import java.util.List;
 
 public class LevoSatelliteService {
 
-    public static LevoSatelliteService create(String satelliteUrl, IBurpExtenderCallbacks callbacks) throws MalformedURLException {
-        return new LevoSatelliteService(callbacks, satelliteUrl);
+    public static LevoSatelliteService create(String satelliteUrl, String organizationId, IBurpExtenderCallbacks callbacks) throws MalformedURLException {
+        return new LevoSatelliteService(callbacks, satelliteUrl, organizationId);
     }
 
     private final IExtensionHelpers helpers;
@@ -27,13 +27,14 @@ public class LevoSatelliteService {
 
     private String organizationId;
 
-    public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl) throws MalformedURLException {
+    public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl, String organizationId) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
         var url = new URL(satelliteUrl);
         var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
         this.hostHeader = url.getHost() + ":" + port;
         this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
+        this.organizationId = organizationId;
     }
 
     public void updateSatelliteUrl(String satelliteUrl) throws MalformedURLException {
