@@ -140,6 +140,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         httpMessage.setSpanKind("SERVER");
         httpMessage.setTraceId(UUID.randomUUID().toString());
         httpMessage.setSpanId(UUID.randomUUID().toString());
+        httpMessage.setRequestTimeNs(System.nanoTime());
         return httpMessage;
     }
 
