@@ -25,6 +25,8 @@ public class LevoSatelliteService {
     private IHttpService service;
     private String hostHeader;
 
+    private String organizationId;
+
     public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
@@ -47,7 +49,14 @@ public class LevoSatelliteService {
         }
     }
 
+    public void updateOrganizationId(String organizationId) {
+        this.organizationId = organizationId;
+    }
+
     public IHttpRequestResponse sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
+        if (organizationId == null || organizationId.isEmpty()) {
+            throw new SatelliteMessageFailed("Organization ID is not set", (short)400);
+        }
         var mapper = new ObjectMapper();
         var jsonBody = mapper.writeValueAsString(httpMessage);
         byte[] body = helpers.stringToBytes(jsonBody);
@@ -55,6 +64,7 @@ public class LevoSatelliteService {
         newHeaders.add("POST /1.0/ebpf/traces HTTP/1.1");
         // Set the host header explicitly since the host is being set as null sometimes.
         newHeaders.add("Host: " + hostHeader);
+        newHeaders.add("x-levo-organization-id: " + organizationId);
         var message = helpers.buildHttpMessage(newHeaders, body);
         var requestResponse = this.callbacks.makeHttpRequest(service, message, false);
 
