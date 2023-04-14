@@ -21,7 +21,8 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             "application/json",
             "application/x-www-form-urlencoded",
             "application/pdf",
-            "text/json"
+            "text/json",
+            "text/plain"
     );
     // Don't send the response body for these content types
     private static final Set<String> DROP_CONTENT_OF_TYPES = Set.of("application/pdf");
@@ -151,7 +152,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         httpMessage.setSpanKind("SERVER");
         httpMessage.setTraceId(UUID.randomUUID().toString());
         httpMessage.setSpanId(UUID.randomUUID().toString());
-        httpMessage.setRequestTimeNs(System.nanoTime());
+        httpMessage.setRequestTimeNs(System.currentTimeMillis() * 1000000);
         return httpMessage;
     }
 
