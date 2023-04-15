@@ -1,10 +1,11 @@
 package ai.levo;
 
 import ai.levo.exceptions.SatelliteMessageFailed;
-import burp.*;
+import burp.IBurpExtenderCallbacks;
+import burp.IExtensionStateListener;
+import burp.IRequestInfo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
-import java.io.UnsupportedEncodingException;
 import java.util.*;
 
 /**
@@ -99,7 +100,11 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
         // Add the method and path separately in the headers.
         request.getHeaders().put(":method", reqInfo.getMethod());
-        request.getHeaders().put(":path", reqInfo.getUrl().getPath());
+        if (reqInfo.getUrl().getQuery() != null && !reqInfo.getUrl().getQuery().isEmpty()) {
+            request.getHeaders().put(":path", reqInfo.getUrl().getPath() + "?" + reqInfo.getUrl().getQuery());
+        } else {
+            request.getHeaders().put(":path", reqInfo.getUrl().getPath());
+        }
 
         String requestBody = callbacks.getHelpers().bytesToString(reqContent);
         String[] parts = requestBody.split(TWO_LINES_PATTERN);
