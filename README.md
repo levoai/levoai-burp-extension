@@ -6,12 +6,16 @@ and annotate specs with the PII details.
 **In Levo's SaaS UI**
 * Create a free-forever account on [Levo.ai](https://levo.ai). No credit card required.
 
-***Drop us a mail so that we can host a free satellite for you***
+***Drop us a mail so that we can host a satellite for you***
 * Drop us a mail at support@levo.ai with the subject line - 
 
     `Need Hosted Satellite for Burp Suite.`
-* We will bring up a hosted satellite for you in no time, so that you can utilize all of Levo's incredible services, *No Payment Required*.
-* We'll revert back with a URL to your hosted satellite that you can enter in the Burp Suite Extension.
+* We will bring up a hosted satellite for you in no time, so that you can utilize all of Levo's incredible services.
+* Login to Levo at https://app.levo.ai and copy the org-id from the user profile in the top right.
+
+  `User profile -> User settings -> Organizations -> Click on Copy under Organization ID`
+* Enter the satellite url as - `collector.levo.ai` in the Burp config menu.
+* Check out the Advanced section below for instructions to setup a satellite locally.
 
 **In Burp**
 * Turn on sending traffic to Levo in Burp using config menu
