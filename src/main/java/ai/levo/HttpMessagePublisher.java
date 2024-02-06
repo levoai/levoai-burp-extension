@@ -6,6 +6,7 @@ import burp.IExtensionStateListener;
 import burp.IRequestInfo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
+import java.net.InetAddress;
 import java.util.*;
 
 /**
@@ -28,6 +29,30 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     // Don't send the response body for these content types
     private static final Set<String> DROP_CONTENT_OF_TYPES = Set.of("application/pdf");
     private static final String SERVICE_NAME_RESOURCE_KEY = "service_name";
+    private static final String SENSOR_TYPE_KEY = "sensor_type";
+    private static final String SENSOR_TYPE_VALUE = "BURP_EXTENSION";
+    private static final String SENSOR_VERSION_KEY = "sensor_version";
+    private static final String HOST_NAME_KEY = "host_name";
+    private static final Map<String, String> RESOURCE_MAP;
+
+    static {
+        String hostname = "unknown";
+        String version = "unknown";
+        try {
+            // Get version from settings.properties
+            var props = new Properties();
+            props.load(HttpMessagePublisher.class.getResourceAsStream("/settings.properties"));
+            version = props.getProperty("version", "unknown");
+            hostname = InetAddress.getLocalHost().getHostName();
+        } catch (Exception ignored) {}
+        RESOURCE_MAP = Map.of(
+            SERVICE_NAME_RESOURCE_KEY, DEFAULT_SERVICE_NAME,
+            SENSOR_TYPE_KEY, SENSOR_TYPE_VALUE,
+            SENSOR_VERSION_KEY, version,
+            HOST_NAME_KEY, hostname
+        );
+    }
+
 
     private final IBurpExtenderCallbacks callbacks;
 
@@ -153,7 +178,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         HttpMessage httpMessage = new HttpMessage();
         httpMessage.setRequest(request);
         httpMessage.setResponse(response);
-        httpMessage.setResource(Map.of(SERVICE_NAME_RESOURCE_KEY, DEFAULT_SERVICE_NAME));
+        httpMessage.setResource(RESOURCE_MAP);
         httpMessage.setSpanKind("SERVER");
         httpMessage.setTraceId(UUID.randomUUID().toString());
         httpMessage.setSpanId(UUID.randomUUID().toString());

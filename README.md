@@ -5,21 +5,17 @@ and annotate specs with the PII details.
 ## How does this work?
 **In Levo's SaaS UI**
 * Create a free-forever account on [Levo.ai](https://levo.ai). No credit card required.
-* Pick one of these two options based on whether you're okay sending API traffic to Levo's cloud or not.
 
-***Running Levo's Satellite locally so that you don't send API traffic to Levo's cloud***
-* Login to Levo at https://app.levo.ai and copy Levo's auth key from the user profile in the top right.
+***Drop us a mail so that we can host a satellite for you***
+* Drop us a mail at support@levo.ai with the subject line - 
 
-  `User profile -> User settings -> Keys -> Get Satellite Authorization Key`
+    `Need Hosted Satellite for Burp Suite.`
+* We will bring up a hosted satellite for you in no time, so that you can utilize all of Levo's incredible services.
+* Login to Levo at https://app.levo.ai and copy the org-id from the user profile in the top right.
 
-* Bring up Levo's Satellite service locally using this docker run command.
-
-  `docker run -p 9999:9999 -e LEVOAI_AUTH_KEY=<auth key from Levo.ai> levoai/satellite-single-node`
-
-***Get the Satellite URL from Levo's cloud***
-* Start a Satellite from Levo's SaaS UI and copy the URL.
-
-    `Settings -> Organization -> Satellite`
+  `User profile -> User settings -> Organizations -> Click on Copy under Organization ID`
+* Enter the satellite url as - `collector.levo.ai` in the Burp config menu.
+* Check out the Advanced section below for instructions to setup a satellite locally.
 
 **In Burp**
 * Turn on sending traffic to Levo in Burp using config menu
@@ -70,6 +66,17 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
  * Detects and classifies PII in the traffic and annotates the OpenApi specs with the PII details.
  * In this version, you need to run Levo's Satellite service locally on your machine using docker-compose. We plan to
    make this optional in the future.
+
+## Advanced
+
+***Running Levo's Satellite locally so that you don't send API traffic to Levo's cloud***
+* Login to Levo at https://app.levo.ai and copy Levo's auth key from the user profile in the top right.
+
+  `User profile -> User settings -> Keys -> Get Satellite Authorization Key`
+
+* Bring up Levo's Satellite service locally using this docker run command.
+
+  `docker run -p 9999:9999 -e LEVOAI_AUTH_KEY=<auth key from Levo.ai> levoai/satellite-single-node`
 
 # Feedback/Q&A
 Please don't hesitate to reach out to us at support@levo.ai with suggestions, feedback, or questions.
