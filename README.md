@@ -53,7 +53,7 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
 
 # Changelog
 
-**0.1.8**
+**0.2.0**
  * Allow setting the environment to which the traffic is to be sent on the Levo Dashboard.
 
 **0.1.7**
