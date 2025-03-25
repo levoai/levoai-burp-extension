@@ -20,6 +20,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
     private static final String EXTENSION_MENU_ENABLE_SEND = "Send traffic to Levo";
     private static final String EXTENSION_MENU_CONFIGURE_URL = "Set custom Levo's Satellite URL";
     private static final String EXTENSION_MENU_CONFIGURE_ORGANIZATION = "Set Levo Organization Id";
+    private static final String EXTENSION_MENU_CONFIGURE_ENVIRONMENT = "Set Environment for Levo Dashboard";
     private static final String DEFAULT_LEVO_SATELLITE_URL = "https://collector.levo.ai";
 
     /**
@@ -43,6 +44,11 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
      */
     public static volatile String LEVO_ORGANIZATION_ID = null;
 
+    /**
+     * Expose the configuration option to allow the user to configure Levo environment
+     */
+    public static volatile String LEVO_ENVIRONMENT = null;
+
 
     /**
      * Option configuration key for the restriction of the sending of requests in defined target scope.
@@ -60,9 +66,14 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
     public static final String LEVO_SATELLITE_URL_CFG_KEY = "LEVO_SATELLITE_URL";
 
     /**
-     * Option configuration key to specify Levo's Satellite URL.
+     * Option configuration key to specify Levo Organization ID.
      */
     public static final String LEVO_ORGANIZATION_ID_CFG_KEY = "LEVO_ORGANIZATION_ID";
+
+    /**
+     * Option configuration key to specify Levo Organization ID.
+     */
+    public static final String LEVO_ENVIRONMENT_CFG_KEY = "LEVO_ENVIRONMENT";
 
     /**
      * Extension root configuration menu.
@@ -98,6 +109,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             LEVO_SATELLITE_URL = value;
         }
         LEVO_ORGANIZATION_ID = this.callbacks.loadExtensionSetting(LEVO_ORGANIZATION_ID_CFG_KEY);
+        LEVO_ENVIRONMENT = this.callbacks.loadExtensionSetting(LEVO_ENVIRONMENT_CFG_KEY);
         value = this.callbacks.loadExtensionSetting(ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY);
         ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.parseBoolean(value);
         value = this.callbacks.loadExtensionSetting(ENABLE_SENDING_CFG_KEY);
@@ -112,6 +124,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
         this.cfgMenu = new JMenu(EXTENSION_MENU_NAME);
 
         this.cfgMenu.add(getConfigureOrganizationIdConfigMenuItem());
+        this.cfgMenu.add(getConfigureEnvironmentConfigMenuItem());
 
         // Add the menu to enable sending the traffic
         final JCheckBoxMenuItem subMenuEnableSending =
@@ -130,6 +143,14 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                         ConfigMenu.this.alertWriter.writeAlert("Please set the Levo Organization Id first.");
                         subMenuEnableSending.setSelected(false);
                         return;
+                    }
+                    String environment = callbacks.loadExtensionSetting(ConfigMenu.LEVO_ENVIRONMENT_CFG_KEY);
+                    if (environment == null || environment.isEmpty()) {
+                        JOptionPane.showMessageDialog(
+                                getBurpFrame(),
+                                "Environment not set. Using \'staging\' as default.",
+                                "Set Environment",
+                                JOptionPane.INFORMATION_MESSAGE);
                     }
                     ConfigMenu.this.callbacks.saveExtensionSetting(ENABLE_SENDING_CFG_KEY, Boolean.TRUE.toString());
                     ConfigMenu.IS_SENDING_ENABLED = Boolean.TRUE;
@@ -283,11 +304,49 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             title,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Satellite URL: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Organization ID: " + exp.getMessage());
                 }
             }
         });
         return subMenuOrganizationIdMenuItem;
+    }
+
+    private JMenuItem getConfigureEnvironmentConfigMenuItem() {
+        final JMenuItem subMenuEnvironmentMenuItem = new JMenuItem(EXTENSION_MENU_CONFIGURE_ENVIRONMENT);
+        subMenuEnvironmentMenuItem.addActionListener(new AbstractAction(EXTENSION_MENU_CONFIGURE_ENVIRONMENT) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String environment = callbacks.loadExtensionSetting(ConfigMenu.LEVO_ENVIRONMENT_CFG_KEY);
+                try {
+                    String title = EXTENSION_MENU_CONFIGURE_ENVIRONMENT;
+                    if (ConfigMenu.IS_SENDING_ENABLED) {
+                        JOptionPane.showMessageDialog(ConfigMenu.getBurpFrame(),
+                                "Sending must be paused prior to updating environment",
+                                title, JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+
+                    String msg = "Please enter your environment:";
+                    Object newEnvironmentInputResponse = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE, null, null, environment);
+                    // Input response is null if the user cancels the dialog
+                    if (newEnvironmentInputResponse == null) {
+                        return;
+                    }
+                    String newEnvironment = newEnvironmentInputResponse.toString();
+
+                    levoSatelliteService.updateEnvironment(newEnvironment);
+                    callbacks.saveExtensionSetting(ConfigMenu.LEVO_ENVIRONMENT_CFG_KEY, newEnvironment);
+                    JOptionPane.showMessageDialog(
+                            getBurpFrame(),
+                            "Environment changed to: " + newEnvironment,
+                            title,
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception exp) {
+                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Environment: " + exp.getMessage());
+                }
+            }
+        });
+        return subMenuEnvironmentMenuItem;
     }
 
     /**

@@ -31,6 +31,7 @@ public class BurpExtender implements IBurpExtender {
             }
 
             String organizationId = callbacks.loadExtensionSetting(ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY);
+            String environment = callbacks.loadExtensionSetting(ConfigMenu.LEVO_ENVIRONMENT_CFG_KEY);
 
             boolean isSendingPaused = Boolean.parseBoolean(callbacks.loadExtensionSetting(ConfigMenu.ENABLE_SENDING_CFG_KEY));
             if (!isSendingPaused) {
@@ -40,7 +41,7 @@ public class BurpExtender implements IBurpExtender {
                 callbacks.issueAlert("Sending traffic to Levo's Satellite is paused.");
             }
 
-            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, callbacks);
+            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, environment, callbacks);
 
             // Init publisher and HTTP listener
             HttpMessagePublisher httpMessagePublisher =

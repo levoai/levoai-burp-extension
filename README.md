@@ -53,6 +53,9 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
 
 # Changelog
 
+**0.1.8**
+ * Allow setting the environment to which the traffic is to be sent on the Levo Dashboard.
+
 **0.1.7**
  * Fixed bugs in setting Levo's Satellite URL correctly.
  * We also now support sending traffic to Levo's Satellite running in Levo's SaaS. Login to Levo's SaaS UI
