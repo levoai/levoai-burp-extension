@@ -1,20 +1,20 @@
 # Levo Burp Extension
-Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII,
-and annotate specs with the PII details.
+Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII, and annotate specs with the PII details.
 
 ## How does this work?
-**In Levo's SaaS UI**
-* Create a free-forever account on [Levo.ai](https://levo.ai). No credit card required.
 
-***Drop us a mail so that we can host a satellite for you***
-* Drop us a mail at support@levo.ai with the subject line - 
+***[Book a Demo](https://www.levo.ai/book-demo) to know about the Levo.ai***
 
-    `Need Hosted Satellite for Burp Suite.`
-* We will bring up a hosted satellite for you in no time, so that you can utilize all of Levo's incredible services.
-* Login to Levo at https://app.levo.ai and copy the org-id from the user profile in the top right.
-
-  `User profile -> User settings -> Organizations -> Click on Copy under Organization ID`
-* Enter the satellite url as - `collector.levo.ai` in the Burp config menu.
+**Pre-requisites**
+* **Account:** Create an account on [Levo.ai](https://app.levo.ai) Saas Platform.
+* **Levo Satellite:** Follow instructions for [Satellite Installation](https://docs.levo.ai/install-satellite)
+  - Alternatively, drop an email to our [Support](mailto:support@levo.ai) with the subject line <br/>
+    `Need Hosted Satellite for Burp Suite.` <br/>
+  We will bring up a hosted satellite for you in no time, so that you can utilize all of Levo's incredible services.
+* **Organization ID:** Refer these [instructions](https://docs.levo.ai/integrations/common-tasks#accessing-organization-ids) to get your org-id from Levo's SaaS.
+* **Satellite URL:** Enter the satellite url
+  - `http://localhost:9999` for local satellite (default) or satellite installed on local docker.
+  - `collector.levo.ai` for Levo hosted satellite in the Burp config menu.
 * Check out the Advanced section below for instructions to setup a satellite locally.
 
 **In Burp**
