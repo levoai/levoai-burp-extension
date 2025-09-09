@@ -1,21 +1,23 @@
 # Levo Burp Extension
-Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII,
-and annotate specs with the PII details.
+Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify the PII, and annotate specs with the PII details.
 
 ## How does this work?
-**In Levo's SaaS UI**
-* Create a free-forever account on [Levo.ai](https://levo.ai). No credit card required.
 
-***Drop us a mail so that we can host a satellite for you***
-* Drop us a mail at support@levo.ai with the subject line - 
+***[Book a Demo](https://www.levo.ai/book-demo) to learn about the Levo.ai***
+
+**Pre-requisites**
+* **Account:** Create an account on the [Levo.ai](https://app.levo.ai) SaaS platform.
+* **Levo Satellite:** Follow the instructions for [Satellite Installation](https://docs.levo.ai/install-satellite).
+  - Alternatively, email our [Support](mailto:support@levo.ai) with the subject line:
 
     `Need Hosted Satellite for Burp Suite.`
-* We will bring up a hosted satellite for you in no time, so that you can utilize all of Levo's incredible services.
-* Login to Levo at https://app.levo.ai and copy the org-id from the user profile in the top right.
 
-  `User profile -> User settings -> Organizations -> Click on Copy under Organization ID`
-* Enter the satellite url as - `collector.levo.ai` in the Burp config menu.
-* Check out the Advanced section below for instructions to setup a satellite locally.
+    We will quickly set up a hosted satellite for you, so you can take full advantage of Levo's services.
+* **Organization ID:** Refer to these [instructions](https://docs.levo.ai/integrations/common-tasks#accessing-organization-ids) to obtain your organization ID from Levo's SaaS.
+* **Satellite URL:** Enter the satellite URL:
+  - `http://localhost:9999` for a local satellite (default) or a satellite installed via local Docker.
+  - `collector.levo.ai` for the Levo-hosted satellite in the Burp config menu.
+* See the Advanced section below for instructions on setting up a satellite locally.
 
 **In Burp**
 * Turn on sending traffic to Levo in Burp using config menu
