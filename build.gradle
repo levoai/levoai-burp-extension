@@ -22,7 +22,7 @@ repositories {
 
 dependencies {
     implementation('net.portswigger.burp.extender:burp-extender-api:2.3')
-    implementation('com.fasterxml.jackson.core:jackson-databind:2.17.1')
+    implementation('com.fasterxml.jackson.core:jackson-databind:2.21.0')
 }
 
 compileJava {
