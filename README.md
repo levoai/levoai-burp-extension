@@ -16,7 +16,7 @@ Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify 
 * **Organization ID:** Refer to these [instructions](https://docs.levo.ai/integrations/common-tasks#accessing-organization-ids) to obtain your organization ID from Levo's SaaS.
 * **Satellite URL:** Enter the satellite URL:
   - `http://localhost:9999` for a local satellite (default) or a satellite installed via local Docker.
-  - `collector.levo.ai` for the Levo-hosted satellite in the Burp config menu.
+  - `https://satellite.levo.ai` for the Levo-hosted satellite in the Burp config menu.
 * See the Advanced section below for instructions on setting up a satellite locally.
 
 **In Burp**
