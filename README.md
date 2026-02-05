@@ -16,7 +16,7 @@ Build OpenApi specs from Burp's traffic using Levo.ai. Also detect and classify 
 * **Organization ID:** Refer to these [instructions](https://docs.levo.ai/integrations/common-tasks#accessing-organization-ids) to obtain your organization ID from Levo's SaaS.
 * **Satellite URL:** Enter the satellite URL:
   - `http://localhost:9999` for a local satellite (default) or a satellite installed via local Docker.
-  - `collector.levo.ai` for the Levo-hosted satellite in the Burp config menu.
+  - `https://satellite.levo.ai` for the Levo-hosted satellite in the Burp config menu.
 * See the Advanced section below for instructions on setting up a satellite locally.
 
 **In Burp**
@@ -54,6 +54,9 @@ $ gradlew clean fatJar
 Nightly build publishes the jar as an artifact in this repo. You can download and use it directly with Burp.
 
 # Changelog
+
+**0.2.1**
+ * Fixed Host header to omit default port numbers (80 for HTTP, 443 for HTTPS) per RFC 7230 standard.
 
 **0.2.0**
  * Allow setting the environment to which the traffic is to be sent on the Levo Dashboard.

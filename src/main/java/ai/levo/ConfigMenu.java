@@ -21,7 +21,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
     private static final String EXTENSION_MENU_CONFIGURE_URL = "Set custom Levo's Satellite URL";
     private static final String EXTENSION_MENU_CONFIGURE_ORGANIZATION = "Set Levo Organization Id";
     private static final String EXTENSION_MENU_CONFIGURE_ENVIRONMENT = "Set Environment for Levo Dashboard";
-    private static final String DEFAULT_LEVO_SATELLITE_URL = "https://collector.levo.ai";
+    private static final String DEFAULT_LEVO_SATELLITE_URL = "https://satellite.levo.ai";
 
     /**
      * Expose the configuration option for the restriction of the sending of requests in defined target scope.
