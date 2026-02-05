@@ -33,12 +33,7 @@ public class LevoSatelliteService {
         this.callbacks = callbacks;
         var url = new URL(satelliteUrl);
         var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-        // Only include port in Host header if it's non-default (RFC 7230)
-        if (port == url.getDefaultPort()) {
-            this.hostHeader = url.getHost();
-        } else {
-            this.hostHeader = url.getHost() + ":" + port;
-        }
+        this.hostHeader = buildHostHeader(url);
         this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
         this.organizationId = organizationId;
         this.environment = environment;
@@ -52,14 +47,24 @@ public class LevoSatelliteService {
         // Update the service if host is not empty
         if (url.getHost() != null && !url.getHost().isEmpty()) {
             var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-            // Only include port in Host header if it's non-default (RFC 7230)
-            if (port == url.getDefaultPort()) {
-                this.hostHeader = url.getHost();
-            } else {
-                this.hostHeader = url.getHost() + ":" + port;
-            }
+            this.hostHeader = buildHostHeader(url);
             this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
         }
+    }
+
+    /**
+     * Builds the Host header value per RFC 7230.
+     * Omits the port number if it matches the default port (80 for HTTP, 443 for HTTPS).
+     *
+     * @param url The URL to extract host header from
+     * @return Host header value (e.g., "example.com" or "example.com:8443")
+     */
+    private String buildHostHeader(URL url) {
+        var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+        if (port == url.getDefaultPort()) {
+            return url.getHost();
+        }
+        return url.getHost() + ":" + port;
     }
 
     public void updateOrganizationId(String organizationId) {
