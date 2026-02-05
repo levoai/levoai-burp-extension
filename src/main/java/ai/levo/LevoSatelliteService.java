@@ -33,7 +33,12 @@ public class LevoSatelliteService {
         this.callbacks = callbacks;
         var url = new URL(satelliteUrl);
         var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-        this.hostHeader = url.getHost() + ":" + port;
+        // Only include port in Host header if it's non-default (RFC 7230)
+        if (port == url.getDefaultPort()) {
+            this.hostHeader = url.getHost();
+        } else {
+            this.hostHeader = url.getHost() + ":" + port;
+        }
         this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
         this.organizationId = organizationId;
         this.environment = environment;
@@ -47,7 +52,12 @@ public class LevoSatelliteService {
         // Update the service if host is not empty
         if (url.getHost() != null && !url.getHost().isEmpty()) {
             var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-            this.hostHeader = url.getHost() + ":" + port;
+            // Only include port in Host header if it's non-default (RFC 7230)
+            if (port == url.getDefaultPort()) {
+                this.hostHeader = url.getHost();
+            } else {
+                this.hostHeader = url.getHost() + ":" + port;
+            }
             this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
         }
     }

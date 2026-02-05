@@ -55,6 +55,9 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
 
 # Changelog
 
+**0.2.1**
+ * Fixed Host header to omit default port numbers (80 for HTTP, 443 for HTTPS) per RFC 7230 standard.
+
 **0.2.0**
  * Allow setting the environment to which the traffic is to be sent on the Levo Dashboard.
 
