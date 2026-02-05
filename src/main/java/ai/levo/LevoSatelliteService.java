@@ -95,6 +95,9 @@ public class LevoSatelliteService {
         var requestResponse = this.callbacks.makeHttpRequest(service, message, false);
 
         var response = requestResponse.getResponse();
+        if (response == null) {
+            throw new SatelliteMessageFailed("Failed to connect to Levo Satellite. Connection refused or network error.", (short)0);
+        }
         var responseInfo = helpers.analyzeResponse(response);
 
         if (responseInfo.getStatusCode() >= 400) {
