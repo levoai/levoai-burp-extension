@@ -22,11 +22,13 @@ public class LevoSatelliteService {
     private final IExtensionHelpers helpers;
     private final IBurpExtenderCallbacks callbacks;
 
-    private IHttpService service;
-    private String hostHeader;
+    // Mutated from the EDT (config menu) and read from the publisher worker thread —
+    // volatile guarantees the worker sees updates without locking.
+    private volatile IHttpService service;
+    private volatile String hostHeader;
 
-    private String organizationId;
-    private String environment;
+    private volatile String organizationId;
+    private volatile String environment;
 
     public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl, String organizationId, String environment) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();
@@ -90,6 +92,7 @@ public class LevoSatelliteService {
         newHeaders.add("POST /1.0/ebpf/traces HTTP/1.1");
         // Set the host header explicitly since the host is being set as null sometimes.
         newHeaders.add("Host: " + hostHeader);
+        newHeaders.add("Content-Type: application/json");
         newHeaders.add("x-levo-organization-id: " + organizationId);
         var message = helpers.buildHttpMessage(newHeaders, body);
         var requestResponse = this.callbacks.makeHttpRequest(service, message, false);
