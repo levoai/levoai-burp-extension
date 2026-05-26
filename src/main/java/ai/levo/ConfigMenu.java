@@ -105,7 +105,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
 
         // Load the save state of the options
         String value = this.callbacks.loadExtensionSetting(LEVO_SATELLITE_URL_CFG_KEY);
-        if (value != null || !value.isEmpty()) {
+        if (value != null && !value.isEmpty()) {
             LEVO_SATELLITE_URL = value;
         }
         LEVO_ORGANIZATION_ID = this.callbacks.loadExtensionSetting(LEVO_ORGANIZATION_ID_CFG_KEY);
@@ -362,16 +362,6 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             }
         }
         return null;
-    }
-
-    // Create a dialog to update satellite url string
-    private void updateSatelliteUrl(String satelliteUrl) {
-        String title = EXTENSION_MENU_CONFIGURE_URL;
-        String msg = "Please enter the URL of Levo's Satellite:";
-        String newSatelliteUrl = JOptionPane.showInputDialog(getBurpFrame(), msg, title, JOptionPane.QUESTION_MESSAGE);
-        if (newSatelliteUrl != null && !newSatelliteUrl.isEmpty()) {
-            satelliteUrl = newSatelliteUrl;
-        }
     }
 
 }
