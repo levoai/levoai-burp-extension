@@ -99,6 +99,13 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         final String urlForLog = reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath();
 
         publishExecutor.execute(() -> {
+            // Re-check the send-enabled flag here so messages enqueued while sending was
+            // enabled are NOT exfiltrated after the user disables "Send traffic to Levo".
+            // The listener stops enqueuing immediately on toggle-off, but tasks already in
+            // the queue would otherwise still execute.
+            if (!ConfigMenu.IS_SENDING_ENABLED) {
+                return;
+            }
             try {
                 satelliteService.sendHttpMessage(httpMessage);
                 this.alertWriter.writeAlert("Sent the HTTP message for: " + urlForLog + " to Levo's Satellite.");
