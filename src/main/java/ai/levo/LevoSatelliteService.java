@@ -90,6 +90,7 @@ public class LevoSatelliteService {
         newHeaders.add("POST /1.0/ebpf/traces HTTP/1.1");
         // Set the host header explicitly since the host is being set as null sometimes.
         newHeaders.add("Host: " + hostHeader);
+        newHeaders.add("Content-Type: application/json");
         newHeaders.add("x-levo-organization-id: " + organizationId);
         var message = helpers.buildHttpMessage(newHeaders, body);
         var requestResponse = this.callbacks.makeHttpRequest(service, message, false);

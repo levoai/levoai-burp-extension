@@ -8,6 +8,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Handles the HTTP messages that are received and sends them to Levo's Satellite.
@@ -17,6 +21,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     private static final String TWO_LINES_PATTERN = "\r\n\r\n";
     private static final String NEW_LINE_PATTERN = "\r\n";
     private static final String DEFAULT_SERVICE_NAME = "default";
+    private static final String DEFAULT_ENVIRONMENT = "staging";
     private static final String CONTENT_TYPE_HEADER = "content-type";
 
     private static final List<String> ACCEPTED_CONTENT_TYPES = Arrays.asList(
@@ -34,56 +39,56 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     private static final String SENSOR_VERSION_KEY = "sensor_version";
     private static final String HOST_NAME_KEY = "host_name";
     private static final String ENVIRONMENT_KEY = "levo_env";
-    private static final Map<String, String> RESOURCE_MAP;
+
+    // Immutable base resource map populated once at class load. Per-message env is layered on top.
+    private static final Map<String, String> BASE_RESOURCE_MAP;
 
     static {
         String hostname = "unknown";
         String version = "unknown";
-        String env = "staging";
         try {
-            // Get version from settings.properties
             var props = new Properties();
             props.load(HttpMessagePublisher.class.getResourceAsStream("/settings.properties"));
             version = props.getProperty("version", "unknown");
             hostname = InetAddress.getLocalHost().getHostName();
         } catch (Exception ignored) {}
-        RESOURCE_MAP = new HashMap<String, String>(Map.of(
+        BASE_RESOURCE_MAP = Map.of(
             SERVICE_NAME_RESOURCE_KEY, DEFAULT_SERVICE_NAME,
             SENSOR_TYPE_KEY, SENSOR_TYPE_VALUE,
             SENSOR_VERSION_KEY, version,
-            HOST_NAME_KEY, hostname,
-            ENVIRONMENT_KEY, env
-        ));
+            HOST_NAME_KEY, hostname
+        );
     }
 
+    // Bounded publish queue. Sized so a brief Satellite hiccup doesn't lose data,
+    // but a sustained outage doesn't grow the heap. DiscardOldestPolicy keeps recent traffic.
+    private static final int PUBLISH_QUEUE_CAPACITY = 1024;
+    private static final long SHUTDOWN_AWAIT_SECONDS = 5L;
 
     private final IBurpExtenderCallbacks callbacks;
-
-    /**
-     * Ref on alert writer.
-     */
     private final AlertWriter alertWriter;
-
     private final LevoSatelliteService satelliteService;
+    private final ThreadPoolExecutor publishExecutor;
+    private final AtomicLong droppedCount = new AtomicLong();
 
-    /**
-     * Constructor.
-     *
-     * @param satelliteService Levo's Satellite Service
-     * @param alertWriter Ref on alert writer.
-     * @param callbacks callbacks
-     */
     public HttpMessagePublisher(LevoSatelliteService satelliteService, AlertWriter alertWriter, IBurpExtenderCallbacks callbacks) {
         this.alertWriter = alertWriter;
         this.callbacks = callbacks;
         this.satelliteService = satelliteService;
+        this.publishExecutor = new ThreadPoolExecutor(
+                1, 1,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(PUBLISH_QUEUE_CAPACITY),
+                r -> {
+                    Thread t = new Thread(r, "levo-satellite-publisher");
+                    t.setDaemon(true);
+                    return t;
+                },
+                new ThreadPoolExecutor.DiscardOldestPolicy());
     }
 
     /**
-     * Send an HTTP message to Levo's Satellite.
-     *
-     * @param reqInfo    Details of the request to be processed.
-     * @param reqContent Raw content of the request.
+     * Convert and queue an HTTP message for asynchronous delivery to Levo's Satellite.
      */
     void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) {
         HttpMessage httpMessage = convertToHttpMessage(reqInfo, reqContent, statusCode, resContent);
@@ -91,14 +96,29 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             return;
         }
 
-        try {
-            satelliteService.sendHttpMessage(httpMessage);
-            this.alertWriter.writeAlert("Sent the HTTP message for: "
-                    + reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath() + " to Levo's Satellite.");
-        } catch (SatelliteMessageFailed e) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo. Status code("+ e.getStatusCode() +"): " + e.getMessage());
-        } catch (JsonProcessingException e) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
+        final String urlForLog = reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath();
+        final int queueSizeBefore = publishExecutor.getQueue().size();
+
+        publishExecutor.execute(() -> {
+            try {
+                satelliteService.sendHttpMessage(httpMessage);
+                this.alertWriter.writeAlert("Sent the HTTP message for: " + urlForLog + " to Levo's Satellite.");
+            } catch (SatelliteMessageFailed e) {
+                this.alertWriter.writeAlert("Cannot send HTTP message to Levo. Status code(" + e.getStatusCode() + "): " + e.getMessage());
+            } catch (JsonProcessingException e) {
+                this.alertWriter.writeAlert("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
+            } catch (Exception e) {
+                this.alertWriter.writeAlert("Cannot send HTTP message to Levo: " + e.getMessage());
+            }
+        });
+
+        // If the queue was already full, DiscardOldestPolicy evicted the oldest task to make room.
+        if (queueSizeBefore >= PUBLISH_QUEUE_CAPACITY) {
+            long total = droppedCount.incrementAndGet();
+            // Throttle the alert: only log on the first drop and then every 100th to avoid flooding.
+            if (total == 1 || total % 100 == 0) {
+                this.alertWriter.writeAlert("Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
+            }
         }
     }
 
@@ -113,7 +133,6 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             }
         }
 
-        //this.alertWriter.writeAlert("Not sending content-type: " + contentType + " to Levo.");
         return true;
     }
 
@@ -149,7 +168,6 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         // Create response headers from the first part of the response. Ignore the status line.
         String[] responseHeaders = responseParts[0].split(NEW_LINE_PATTERN);
         if (responseHeaders.length > 1) {
-            // Create a list from an array and remove the first element since that's status line.
             List<String> headers = java.util.Arrays.asList(responseHeaders);
             headers = headers.subList(1, headers.size());
             response.setHeaders(convertHeadersToMap(headers));
@@ -170,7 +188,6 @@ public class HttpMessagePublisher implements IExtensionStateListener {
                 // Base64 encode the response body.
                 response.setBody(callbacks.getHelpers().base64Encode(responseParts[1]));
             } else {
-                // Don't drop the message if the response body is empty.
                 response.setBody("");
             }
         }
@@ -178,16 +195,17 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         // Add the status code separately in the headers.
         response.getHeaders().put(":status", statusCode);
 
-        // Update the environment (if provided) in the resource
+        // Build a fresh per-message resource map so concurrent traffic + an env change
+        // can't last-writer-wins on a shared mutable map.
+        Map<String, String> resourceMap = new HashMap<>(BASE_RESOURCE_MAP);
         String environment = this.satelliteService.getEnvironment();
-        if (environment != null && !environment.isEmpty()) {
-            RESOURCE_MAP.put(ENVIRONMENT_KEY, environment);
-        }
+        resourceMap.put(ENVIRONMENT_KEY,
+                (environment != null && !environment.isEmpty()) ? environment : DEFAULT_ENVIRONMENT);
 
         HttpMessage httpMessage = new HttpMessage();
         httpMessage.setRequest(request);
         httpMessage.setResponse(response);
-        httpMessage.setResource(RESOURCE_MAP);
+        httpMessage.setResource(resourceMap);
         httpMessage.setSpanKind("SERVER");
         httpMessage.setTraceId(UUID.randomUUID().toString());
         httpMessage.setSpanId(UUID.randomUUID().toString());
@@ -196,7 +214,6 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     }
 
     private Map<String, String> convertHeadersToMap(List<String> headers) {
-        // Convert the list of headers into a map by splitting based on the first colon
         Map<String, String> headersMap = new java.util.HashMap<>();
         for (String header : headers) {
             String[] headerParts = header.split(":", 2);
@@ -210,6 +227,16 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
     @Override
     public void extensionUnloaded() {
-        // TODO: Implement this method in future versions.
+        publishExecutor.shutdown();
+        try {
+            if (!publishExecutor.awaitTermination(SHUTDOWN_AWAIT_SECONDS, TimeUnit.SECONDS)) {
+                this.alertWriter.writeAlert("Levo Satellite publish queue did not drain in "
+                        + SHUTDOWN_AWAIT_SECONDS + "s; forcing shutdown.");
+                publishExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            publishExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
