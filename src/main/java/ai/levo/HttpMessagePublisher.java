@@ -84,7 +84,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
                     t.setDaemon(true);
                     return t;
                 },
-                new ThreadPoolExecutor.DiscardOldestPolicy());
+                this::onPublishRejected);
     }
 
     /**
@@ -97,7 +97,6 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         }
 
         final String urlForLog = reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath();
-        final int queueSizeBefore = publishExecutor.getQueue().size();
 
         publishExecutor.execute(() -> {
             try {
@@ -111,15 +110,24 @@ public class HttpMessagePublisher implements IExtensionStateListener {
                 this.alertWriter.writeAlert("Cannot send HTTP message to Levo: " + e.getMessage());
             }
         });
+    }
 
-        // If the queue was already full, DiscardOldestPolicy evicted the oldest task to make room.
-        if (queueSizeBefore >= PUBLISH_QUEUE_CAPACITY) {
-            long total = droppedCount.incrementAndGet();
-            // Throttle the alert: only log on the first drop and then every 100th to avoid flooding.
-            if (total == 1 || total % 100 == 0) {
-                this.alertWriter.writeAlert("Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
-            }
+    /**
+     * Drop-oldest rejection handler. Mirrors {@link ThreadPoolExecutor.DiscardOldestPolicy} but
+     * increments {@link #droppedCount} and emits a throttled alert only when an eviction
+     * actually happens — avoiding the race of inferring drops from a pre-execute size() check.
+     */
+    private void onPublishRejected(Runnable r, ThreadPoolExecutor exec) {
+        if (exec.isShutdown()) {
+            return;
         }
+        exec.getQueue().poll();
+        long total = droppedCount.incrementAndGet();
+        // Throttle the alert: log on the first drop and then every 100th to avoid flooding.
+        if (total == 1 || total % 100 == 0) {
+            this.alertWriter.writeAlert("Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
+        }
+        exec.execute(r);
     }
 
     private boolean shouldDropMessage(String contentType) {
