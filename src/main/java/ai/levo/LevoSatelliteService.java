@@ -6,7 +6,7 @@ import burp.IExtensionHelpers;
 import burp.IHttpRequestResponse;
 import burp.IHttpService;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -22,11 +22,16 @@ public class LevoSatelliteService {
     private final IExtensionHelpers helpers;
     private final IBurpExtenderCallbacks callbacks;
 
-    private IHttpService service;
-    private String hostHeader;
+    // Mutable config updated from the Swing EDT (ConfigMenu actions) and read from the
+    // single-threaded publish worker. volatile gives the worker visibility of EDT writes
+    // without synchronization. service and hostHeader are written together inside
+    // updateSatelliteUrl; a reader may briefly observe the new service with the old
+    // hostHeader (or vice versa), which is acceptable for our single-host POST target.
+    private volatile IHttpService service;
+    private volatile String hostHeader;
 
-    private String organizationId;
-    private String environment;
+    private volatile String organizationId;
+    private volatile String environment;
 
     public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl, String organizationId, String environment) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();

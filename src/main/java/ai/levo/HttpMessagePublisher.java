@@ -120,21 +120,28 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     }
 
     /**
-     * Drop-oldest rejection handler. Mirrors {@link ThreadPoolExecutor.DiscardOldestPolicy} but
-     * increments {@link #droppedCount} and emits a throttled alert only when an eviction
-     * actually happens — avoiding the race of inferring drops from a pre-execute size() check.
+     * Drop-oldest rejection handler. Behaviorally equivalent to
+     * {@link ThreadPoolExecutor.DiscardOldestPolicy} but (a) only increments
+     * {@link #droppedCount} on an actual eviction, and (b) loops on {@code poll()+offer()}
+     * instead of recursing through {@code exec.execute(r)}, so a queue that refills under
+     * high contention cannot grow the call stack and a shutdown between the initial check
+     * and the retry cannot trigger a misleading "queue full" alert.
      */
     private void onPublishRejected(Runnable r, ThreadPoolExecutor exec) {
-        if (exec.isShutdown()) {
-            return;
+        java.util.concurrent.BlockingQueue<Runnable> q = exec.getQueue();
+        while (!exec.isShutdown()) {
+            Runnable evicted = q.poll();
+            if (evicted != null) {
+                long total = droppedCount.incrementAndGet();
+                if (total == 1 || total % 100 == 0) {
+                    this.alertWriter.writeAlert("Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
+                }
+            }
+            if (q.offer(r)) {
+                return;
+            }
+            // Another producer refilled the queue between poll() and offer() — loop and drop another.
         }
-        exec.getQueue().poll();
-        long total = droppedCount.incrementAndGet();
-        // Throttle the alert: log on the first drop and then every 100th to avoid flooding.
-        if (total == 1 || total % 100 == 0) {
-            this.alertWriter.writeAlert("Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
-        }
-        exec.execute(r);
     }
 
     private boolean shouldDropMessage(String contentType) {
