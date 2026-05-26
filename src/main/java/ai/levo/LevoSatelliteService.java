@@ -22,24 +22,35 @@ public class LevoSatelliteService {
     private final IExtensionHelpers helpers;
     private final IBurpExtenderCallbacks callbacks;
 
-    // Mutable config updated from the Swing EDT (ConfigMenu actions) and read from the
-    // single-threaded publish worker. volatile gives the worker visibility of EDT writes
-    // without synchronization. service and hostHeader are written together inside
-    // updateSatelliteUrl; a reader may briefly observe the new service with the old
-    // hostHeader (or vice versa), which is acceptable for our single-host POST target.
-    private volatile IHttpService service;
-    private volatile String hostHeader;
+    /**
+     * Immutable pair of the destination {@link IHttpService} and the matching Host header.
+     * Bundling them together lets the EDT swap both values atomically via a single
+     * {@code volatile} write so a reader (the publish worker) can never observe a
+     * mismatched pair — e.g., the new service with the old Host header — when the
+     * Satellite URL is changed at runtime. That matters if anything between Burp and
+     * the Satellite routes by Host header (virtual hosting / fronting proxy).
+     */
+    private static final class Endpoint {
+        final IHttpService service;
+        final String hostHeader;
 
+        Endpoint(IHttpService service, String hostHeader) {
+            this.service = service;
+            this.hostHeader = hostHeader;
+        }
+    }
+
+    // Mutable config updated from the Swing EDT (ConfigMenu actions) and read from the
+    // publish worker thread. volatile gives the worker visibility of EDT writes without
+    // synchronization. endpoint is a single atomic snapshot of {service, hostHeader}.
+    private volatile Endpoint endpoint;
     private volatile String organizationId;
     private volatile String environment;
 
     public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl, String organizationId, String environment) throws MalformedURLException {
         this.helpers = callbacks.getHelpers();
         this.callbacks = callbacks;
-        var url = new URL(satelliteUrl);
-        var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-        this.hostHeader = buildHostHeader(url);
-        this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
+        this.endpoint = buildEndpoint(new URL(satelliteUrl));
         this.organizationId = organizationId;
         this.environment = environment;
     }
@@ -49,12 +60,16 @@ public class LevoSatelliteService {
             return;
         }
         var url = new URL(satelliteUrl);
-        // Update the service if host is not empty
         if (url.getHost() != null && !url.getHost().isEmpty()) {
-            var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-            this.hostHeader = buildHostHeader(url);
-            this.service = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
+            // Atomic swap — service and hostHeader become visible together.
+            this.endpoint = buildEndpoint(url);
         }
+    }
+
+    private Endpoint buildEndpoint(URL url) {
+        var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
+        var svc = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
+        return new Endpoint(svc, buildHostHeader(url));
     }
 
     /**
@@ -88,17 +103,20 @@ public class LevoSatelliteService {
         if (organizationId == null || organizationId.isEmpty()) {
             throw new SatelliteMessageFailed("Organization ID is not set", (short)400);
         }
+        // Read the endpoint snapshot once so service and hostHeader stay consistent
+        // even if the EDT swaps the endpoint mid-send.
+        Endpoint ep = this.endpoint;
         var mapper = new ObjectMapper();
         var jsonBody = mapper.writeValueAsString(httpMessage);
         byte[] body = helpers.stringToBytes(jsonBody);
         List<String> newHeaders = new ArrayList<>();
         newHeaders.add("POST /1.0/ebpf/traces HTTP/1.1");
         // Set the host header explicitly since the host is being set as null sometimes.
-        newHeaders.add("Host: " + hostHeader);
+        newHeaders.add("Host: " + ep.hostHeader);
         newHeaders.add("Content-Type: application/json");
         newHeaders.add("x-levo-organization-id: " + organizationId);
         var message = helpers.buildHttpMessage(newHeaders, body);
-        var requestResponse = this.callbacks.makeHttpRequest(service, message, false);
+        var requestResponse = this.callbacks.makeHttpRequest(ep.service, message, false);
 
         var response = requestResponse.getResponse();
         if (response == null) {
