@@ -118,6 +118,80 @@ class HttpMessagePublisherCallerTest {
         verify(callbacks, never()).issueAlert(anyString());
     }
 
+    @Test
+    void sendHttpMessage_droppedRequest_unsupportedContentType_routesToPrintOutput_neverIssueAlert() throws Exception {
+        URL testUrl = new URL("http://example.com/api/test");
+        List<String> headers = Arrays.asList(
+                "GET /api/test HTTP/1.1",
+                "Host: example.com",
+                "Content-Type: image/png"
+        );
+
+        when(requestInfo.getUrl()).thenReturn(testUrl);
+        when(requestInfo.getHeaders()).thenReturn(headers);
+        when(helpers.bytesToString(any(byte[].class))).thenReturn("GET /api/test HTTP/1.1\r\n\r\n");
+
+        publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
+
+        verify(callbacks).printOutput(contains("Dropping because of content-type"));
+        verify(callbacks, never()).issueAlert(anyString());
+    }
+
+    @Test
+    void sendHttpMessage_droppedResponse_unsupportedContentType_routesToPrintOutput_neverIssueAlert() throws Exception {
+        URL testUrl = new URL("http://example.com/api/test");
+        List<String> headers = Arrays.asList(
+                "GET /api/test HTTP/1.1",
+                "Host: example.com",
+                "Content-Type: application/json"
+        );
+
+        when(requestInfo.getUrl()).thenReturn(testUrl);
+        when(requestInfo.getHeaders()).thenReturn(headers);
+        when(requestInfo.getMethod()).thenReturn("GET");
+        when(helpers.bytesToString(argThat(arg -> 
+                arg != null && new String(arg).startsWith("request"))))
+                .thenReturn("GET /api/test HTTP/1.1\r\n\r\n");
+        when(helpers.bytesToString(argThat(arg -> 
+                arg != null && new String(arg).startsWith("HTTP"))))
+                .thenReturn("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\n");
+        when(helpers.base64Encode(anyString())).thenReturn("encoded");
+
+        publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
+                "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\n".getBytes());
+
+        verify(callbacks).printOutput(contains("Dropping because content-type not being instrumented"));
+        verify(callbacks, never()).issueAlert(anyString());
+    }
+
+    @Test
+    void sendHttpMessage_pdfBodySuppression_routesToPrintOutput_neverIssueAlert() throws Exception {
+        URL testUrl = new URL("http://example.com/api/test");
+        List<String> headers = Arrays.asList(
+                "GET /api/test HTTP/1.1",
+                "Host: example.com",
+                "Content-Type: application/json"
+        );
+
+        when(requestInfo.getUrl()).thenReturn(testUrl);
+        when(requestInfo.getHeaders()).thenReturn(headers);
+        when(requestInfo.getMethod()).thenReturn("GET");
+        when(helpers.bytesToString(argThat(arg -> 
+                arg != null && new String(arg).startsWith("request"))))
+                .thenReturn("GET /api/test HTTP/1.1\r\n\r\n");
+        when(helpers.bytesToString(argThat(arg -> 
+                arg != null && new String(arg).startsWith("HTTP"))))
+                .thenReturn("HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\n\r\npdf-content");
+        when(helpers.base64Encode(anyString())).thenReturn("encoded");
+
+        publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\n\r\npdf-content".getBytes());
+
+        verify(callbacks).printOutput(contains("Not sending response body for content-type: application/pdf"));
+        verify(callbacks, never()).issueAlert(anyString());
+    }
+
     private void setupValidRequest() throws Exception {
         URL testUrl = new URL("http://example.com/api/test");
         List<String> headers = Arrays.asList(
