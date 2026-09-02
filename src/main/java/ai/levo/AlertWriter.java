@@ -22,11 +22,11 @@ public class AlertWriter {
     }
 
     /**
-     * Write a message to the extension's Output tab.
+     * Write an info message to the extension's Output tab.
      *
      * @param message Message to write.
      */
-    void writeAlert(String message) {
+    public void writeInfo(String message) {
         this.callbacks.printOutput(message);
     }
 
@@ -35,7 +35,7 @@ public class AlertWriter {
      *
      * @param message Error message to write.
      */
-    void writeError(String message) {
+    public void writeError(String message) {
         this.callbacks.printError(message);
     }
 }
