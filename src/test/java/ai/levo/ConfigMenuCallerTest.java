@@ -83,6 +83,9 @@ class ConfigMenuCallerTest {
 
     @Test
     void configMenu_organizationIdUpdateThrows_routesToPrintOutput_neverIssueAlert() throws Exception {
+        jOptionPaneMock.when(() -> JOptionPane.showInputDialog(
+                any(), anyString(), anyString(), anyInt(), any(), any(), any()))
+                .thenReturn("123e4567-e89b-12d3-a456-426614174000");
         doThrow(new RuntimeException("Invalid org"))
                 .when(levoSatelliteService).updateOrganizationId(anyString());
 
@@ -91,6 +94,39 @@ class ConfigMenuCallerTest {
 
         verify(callbacks).printOutput(contains("Cannot update Organization ID:"));
         verify(callbacks, never()).issueAlert(anyString());
+    }
+
+    @Test
+    void configMenu_invalidOrganizationId_isRejectedWithoutSaving() throws Exception {
+        jOptionPaneMock.when(() -> JOptionPane.showInputDialog(
+                any(), anyString(), anyString(), anyInt(), any(), any(), any()))
+                .thenReturn("not-a-uuid");
+
+        JMenuItem menuItem = invokePrivateMethod("getConfigureOrganizationIdConfigMenuItem");
+        triggerActionListener(menuItem);
+
+        verify(levoSatelliteService, never()).updateOrganizationId(anyString());
+        verify(callbacks, never()).saveExtensionSetting(eq(ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY), anyString());
+        verify(callbacks).printOutput(contains("Cannot update Organization ID:"));
+        verify(callbacks).printOutput(contains("must be a UUID"));
+        verify(callbacks, never()).issueAlert(anyString());
+        verify(callbacks, never()).printError(anyString());
+    }
+
+    @Test
+    void configMenu_validOrganizationId_isTrimmedAndSaved() throws Exception {
+        jOptionPaneMock.when(() -> JOptionPane.showInputDialog(
+                any(), anyString(), anyString(), anyInt(), any(), any(), any()))
+                .thenReturn("  123e4567-e89b-12d3-a456-426614174000  ");
+
+        JMenuItem menuItem = invokePrivateMethod("getConfigureOrganizationIdConfigMenuItem");
+        triggerActionListener(menuItem);
+
+        verify(levoSatelliteService).updateOrganizationId("123e4567-e89b-12d3-a456-426614174000");
+        verify(callbacks).saveExtensionSetting(
+                ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY, "123e4567-e89b-12d3-a456-426614174000");
+        verify(callbacks, never()).issueAlert(anyString());
+        verify(callbacks, never()).printError(anyString());
     }
 
     @Test
@@ -120,7 +156,8 @@ class ConfigMenuCallerTest {
 
     @Test
     void configMenu_enableSendingSuccess_routesToPrintOutput_neverIssueAlert() throws Exception {
-        when(callbacks.loadExtensionSetting(ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY)).thenReturn("org123");
+        when(callbacks.loadExtensionSetting(ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY))
+                .thenReturn("123e4567-e89b-12d3-a456-426614174000");
         when(callbacks.loadExtensionSetting(ConfigMenu.LEVO_ENVIRONMENT_CFG_KEY)).thenReturn("staging");
         when(callbacks.loadExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY)).thenReturn("https://satellite.levo.ai");
         ConfigMenu.IS_SENDING_ENABLED = false;

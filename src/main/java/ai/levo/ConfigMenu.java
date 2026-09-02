@@ -134,13 +134,16 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             public void actionPerformed(ActionEvent e) {
                 if (subMenuEnableSending.isSelected()) {
                     String organizationId = callbacks.loadExtensionSetting(ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY);
-                    if (organizationId == null || organizationId.isEmpty()) {
+                    if (!OrganizationId.isValid(organizationId)) {
+                        String msg = organizationId == null || organizationId.trim().isEmpty()
+                                ? "Please set the Levo Organization Id first."
+                                : OrganizationId.validationMessage(organizationId);
                         JOptionPane.showMessageDialog(
                                 getBurpFrame(),
-                                "Please set the Levo Organization Id first.",
+                                msg,
                                 "Set Organization Id",
                                 JOptionPane.INFORMATION_MESSAGE);
-                        ConfigMenu.this.alertWriter.writeInfo("Please set the Levo Organization Id first.");
+                        ConfigMenu.this.alertWriter.writeInfo(msg);
                         subMenuEnableSending.setSelected(false);
                         return;
                     }
@@ -294,7 +297,8 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                     if (newOrganizationIdInputResponse == null) {
                         return;
                     }
-                    String newOrganizationId = newOrganizationIdInputResponse.toString();
+                    String newOrganizationId = OrganizationId.requireValid(
+                            newOrganizationIdInputResponse.toString());
 
                     levoSatelliteService.updateOrganizationId(newOrganizationId);
                     callbacks.saveExtensionSetting(ConfigMenu.LEVO_ORGANIZATION_ID_CFG_KEY, newOrganizationId);
@@ -303,6 +307,13 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             "Organization id changed to: " + newOrganizationId,
                             title,
                             JOptionPane.INFORMATION_MESSAGE);
+                } catch (IllegalArgumentException exp) {
+                    JOptionPane.showMessageDialog(
+                            getBurpFrame(),
+                            exp.getMessage(),
+                            EXTENSION_MENU_CONFIGURE_ORGANIZATION,
+                            JOptionPane.ERROR_MESSAGE);
+                    ConfigMenu.this.alertWriter.writeInfo("Cannot update Organization ID: " + exp.getMessage());
                 } catch (Exception exp) {
                     ConfigMenu.this.alertWriter.writeInfo("Cannot update Organization ID: " + exp.getMessage());
                 }

@@ -88,7 +88,7 @@ public class LevoSatelliteService {
     }
 
     public void updateOrganizationId(String organizationId) {
-        this.organizationId = organizationId;
+        this.organizationId = OrganizationId.requireValid(organizationId);
     }
 
     public void updateEnvironment(String environment) {
@@ -101,7 +101,10 @@ public class LevoSatelliteService {
 
     public IHttpRequestResponse sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
         if (organizationId == null || organizationId.isEmpty()) {
-            throw new SatelliteMessageFailed("Organization ID is not set", (short)400);
+            throw new SatelliteMessageFailed("Organization ID is not set", (short) 400);
+        }
+        if (!OrganizationId.isValid(organizationId)) {
+            throw new SatelliteMessageFailed(OrganizationId.validationMessage(organizationId), (short) 400);
         }
         // Read the endpoint snapshot once so service and hostHeader stay consistent
         // even if the EDT swaps the endpoint mid-send.
