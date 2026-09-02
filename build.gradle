@@ -24,8 +24,8 @@ dependencies {
     implementation('net.portswigger.burp.extender:burp-extender-api:2.3')
     implementation('com.fasterxml.jackson.core:jackson-databind:2.21.6')
     testImplementation('org.junit.jupiter:junit-jupiter:5.10.0')
-    testImplementation('org.mockito:mockito-core:5.5.0')
-    testImplementation('org.mockito:mockito-junit-jupiter:5.5.0')
+    testImplementation('org.mockito:mockito-core:5.23.0')
+    testImplementation('org.mockito:mockito-junit-jupiter:5.23.0')
     testRuntimeOnly('org.junit.platform:junit-platform-launcher')
 }
 
