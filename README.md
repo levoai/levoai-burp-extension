@@ -44,10 +44,12 @@ By default, the traffic isn't sent to Levo. You can enable it using the config m
 
 # Build the extension JAR file
 
+**Requires JDK 17 or later** (Gradle 9 no longer runs on Java 11). The extension itself remains compatible with Java 11 runtime.
+
 Use the following command and the JAR file will be located in folder **build/lib**:
 
 ```
-$ gradlew clean fatJar
+$ ./gradlew clean fatJar
 ```
 
 # Nightly build

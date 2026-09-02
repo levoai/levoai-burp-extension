@@ -33,9 +33,10 @@ test {
     useJUnitPlatform()
 }
 
-compileJava {
-    targetCompatibility = '11'
+tasks.withType(JavaCompile).configureEach {
     sourceCompatibility = '11'
+    targetCompatibility = '11'
+    options.release = 11
 }
 
 task fatJar(type: Jar) {
