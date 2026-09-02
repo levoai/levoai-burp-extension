@@ -20,9 +20,9 @@ jobs:
           java-version: '11'
           distribution: 'adopt'
 
-      - name: Setup Gradle and build jar
+      - name: Run tests and build jar
         uses: gradle/gradle-build-action@v2
         with:
-          arguments: fatJar --no-daemon
+          arguments: test fatJar --no-daemon
         env:
           JAVA_OPTS: ${{ env.JAVA_OPTS }}
