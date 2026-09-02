@@ -66,7 +66,7 @@ public class HttpMessageListener implements IHttpListener {
                 this.httpMessagePublisher.sendHttpMessage(reqInfo, message.getRequest(), statusCode, response);
             }
         } catch (Exception e) {
-            this.alertWriter.writeAlert("Cannot send request: " + e.getMessage());
+            this.alertWriter.writeError("Cannot send request: " + e.getMessage());
         }
     }
 

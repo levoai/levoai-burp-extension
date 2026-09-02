@@ -18,10 +18,9 @@ public class BurpExtender implements IBurpExtender {
         this.callbacks = callbacks;
         ConfigMenu configMenu = null;
         JFrame burpFrame = ConfigMenu.getBurpFrame();
+        AlertWriter alertWriter = new AlertWriter(callbacks);
         try {
             callbacks.setExtensionName(EXTENSION_NAME);
-
-            AlertWriter alertWriter = new AlertWriter(callbacks);
 
             // If the sending is not paused, ask the user if they want to continue sending the HTTP messages
             // or pause the sending.
@@ -38,7 +37,7 @@ public class BurpExtender implements IBurpExtender {
                 // Save the new URL of Levo's Satellite
                 callbacks.saveExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY, satelliteUrl);
             } else {
-                callbacks.issueAlert("Sending traffic to Levo's Satellite is paused.");
+                alertWriter.writeInfo("Sending traffic to Levo's Satellite is paused.");
             }
 
             var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, environment, callbacks);
@@ -64,8 +63,8 @@ public class BurpExtender implements IBurpExtender {
                 configMenu.extensionUnloaded();
             }
 
-            // Notification of the error in the dashboard tab
-            callbacks.issueAlert(errMsg);
+            // Notification of the error in the extension's Errors tab
+            alertWriter.writeError(errMsg);
 
             // Notification of the error using the UI
             JOptionPane.showMessageDialog(burpFrame, errMsg, EXTENSION_NAME, JOptionPane.ERROR_MESSAGE);

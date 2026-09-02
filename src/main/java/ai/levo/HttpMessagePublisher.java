@@ -93,12 +93,12 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
         try {
             satelliteService.sendHttpMessage(httpMessage);
-            this.alertWriter.writeAlert("Sent the HTTP message for: "
+            this.alertWriter.writeInfo("Sent the HTTP message for: "
                     + reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath() + " to Levo's Satellite.");
         } catch (SatelliteMessageFailed e) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo. Status code("+ e.getStatusCode() +"): " + e.getMessage());
+            this.alertWriter.writeError("Cannot send HTTP message to Levo. Status code("+ e.getStatusCode() +"): " + e.getMessage());
         } catch (JsonProcessingException e) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
+            this.alertWriter.writeError("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
         }
     }
 
@@ -113,7 +113,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             }
         }
 
-        //this.alertWriter.writeAlert("Not sending content-type: " + contentType + " to Levo.");
+        //this.alertWriter.writeInfo("Not sending content-type: " + contentType + " to Levo.");
         return true;
     }
 
@@ -123,7 +123,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
         // Ignore if the request body isn't acceptable content type
         if (shouldDropMessage(request.getHeaders().get(CONTENT_TYPE_HEADER))) {
-            this.alertWriter.writeAlert("Dropping because of content-type header not present");
+            this.alertWriter.writeInfo("Dropping because of content-type header not present");
             return null;
         }
 
@@ -158,12 +158,12 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         // Ignore if the response isn't acceptable content type
         String contentType = response.getHeaders().get(CONTENT_TYPE_HEADER);
         if (shouldDropMessage(contentType)) {
-            this.alertWriter.writeAlert("Dropping because content-type not being instrumented.");
+            this.alertWriter.writeInfo("Dropping because content-type not being instrumented.");
             return null;
         }
 
         if (contentType != null && DROP_CONTENT_OF_TYPES.contains(contentType)) {
-            alertWriter.writeAlert("Not sending response body for content-type: " + contentType + " to Levo.");
+            alertWriter.writeInfo("Not sending response body for content-type: " + contentType + " to Levo.");
             response.setBody("");
         } else {
             if (responseParts.length > 1 && !responseParts[1].isEmpty()) {

@@ -140,7 +140,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                                 "Please set the Levo Organization Id first.",
                                 "Set Organization Id",
                                 JOptionPane.INFORMATION_MESSAGE);
-                        ConfigMenu.this.alertWriter.writeAlert("Please set the Levo Organization Id first.");
+                        ConfigMenu.this.alertWriter.writeInfo("Please set the Levo Organization Id first.");
                         subMenuEnableSending.setSelected(false);
                         return;
                     }
@@ -156,11 +156,11 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                     ConfigMenu.IS_SENDING_ENABLED = Boolean.TRUE;
                     String satelliteUrl = callbacks.loadExtensionSetting(ConfigMenu.LEVO_SATELLITE_URL_CFG_KEY);
                     String msg = "Starting to send the traffic to Levo at address: " + satelliteUrl;
-                    ConfigMenu.this.alertWriter.writeAlert(msg);
+                    ConfigMenu.this.alertWriter.writeInfo(msg);
                 } else {
                     ConfigMenu.this.callbacks.saveExtensionSetting(ENABLE_SENDING_CFG_KEY, Boolean.FALSE.toString());
                     ConfigMenu.IS_SENDING_ENABLED = Boolean.FALSE;
-                    ConfigMenu.this.alertWriter.writeAlert("Stopped sending the traffic to Levo.");
+                    ConfigMenu.this.alertWriter.writeInfo("Stopped sending the traffic to Levo.");
                 }
             }
         });
@@ -177,13 +177,13 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                     ConfigMenu.this.callbacks.saveExtensionSetting(
                             ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY, Boolean.TRUE.toString());
                     ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.TRUE;
-                    ConfigMenu.this.alertWriter.writeAlert(
+                    ConfigMenu.this.alertWriter.writeInfo(
                             "From now, only traffic from defined target scope will be sent to Levo.");
                 } else {
                     ConfigMenu.this.callbacks.saveExtensionSetting(
                             ONLY_INCLUDE_REQUESTS_FROM_SCOPE_CFG_KEY, Boolean.FALSE.toString());
                     ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = Boolean.FALSE;
-                    ConfigMenu.this.alertWriter.writeAlert(
+                    ConfigMenu.this.alertWriter.writeInfo(
                             "From now, traffic from all targets will be sent to Levo.");
                 }
             }
@@ -199,7 +199,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             jMenuBar.add(this.cfgMenu);
             jMenuBar.repaint();
         } else {
-            this.alertWriter.writeAlert("Cannot add Levo's configuration menu (ref on the BURP frame is null).");
+            this.alertWriter.writeInfo("Cannot add Levo's configuration menu (ref on the BURP frame is null).");
         }
     }
 
@@ -216,7 +216,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
             jMenuBar.remove(this.cfgMenu);
             jMenuBar.repaint();
         } else {
-            this.alertWriter.writeAlert("Cannot remove Levo's configuration menu (ref on the BURP frame is null).");
+            this.alertWriter.writeInfo("Cannot remove Levo's configuration menu (ref on the BURP frame is null).");
         }
     }
 
@@ -266,7 +266,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             EXTENSION_MENU_CONFIGURE_URL,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Satellite URL: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeInfo("Cannot update Satellite URL: " + exp.getMessage());
                 }
             }
         });
@@ -304,7 +304,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             title,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Organization ID: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeInfo("Cannot update Organization ID: " + exp.getMessage());
                 }
             }
         });
@@ -342,7 +342,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             title,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Environment: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeInfo("Cannot update Environment: " + exp.getMessage());
                 }
             }
         });
