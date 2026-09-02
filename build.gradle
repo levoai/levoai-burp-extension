@@ -10,8 +10,8 @@ buildscript {
 apply plugin: 'java'
 apply plugin: 'maven-publish'
 
-group 'ai.levo'
-version '0.2.1'
+group = 'ai.levo'
+version = '0.2.1'
 
 def burpExtensionHomepage = 'https://github.com/levoai/levoai-burp-extension'
 def burpExtensionJarName = 'LevoAiBurpExtension.jar'
@@ -26,6 +26,7 @@ dependencies {
     testImplementation('org.junit.jupiter:junit-jupiter:5.10.0')
     testImplementation('org.mockito:mockito-core:5.5.0')
     testImplementation('org.mockito:mockito-junit-jupiter:5.5.0')
+    testRuntimeOnly('org.junit.platform:junit-platform-launcher')
 }
 
 test {
@@ -33,8 +34,8 @@ test {
 }
 
 compileJava {
-    targetCompatibility '11'
-    sourceCompatibility '11'
+    targetCompatibility = '11'
+    sourceCompatibility = '11'
 }
 
 task fatJar(type: Jar) {
@@ -48,11 +49,13 @@ task fatJar(type: Jar) {
 }
 
 task addVersionToProperties(dependsOn: processResources) {
+    def versionString = version.toString()
+    def propsFile = file("$buildDir/resources/main/settings.properties")
     doLast {
         def props = new Properties()
-        file("$buildDir/resources/main/settings.properties").withInputStream { props.load(it) }
-        props["version"] = project.version.toString()
-        file("$buildDir/resources/main/settings.properties").withOutputStream { props.store(it, null) }
+        propsFile.withInputStream { props.load(it) }
+        props["version"] = versionString
+        propsFile.withOutputStream { props.store(it, null) }
     }
 }
 
