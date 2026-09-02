@@ -110,11 +110,17 @@ public class HttpMessagePublisher implements IExtensionStateListener {
                 satelliteService.sendHttpMessage(httpMessage);
                 this.alertWriter.writeInfo("Sent the HTTP message for: " + urlForLog + " to Levo's Satellite.");
             } catch (SatelliteMessageFailed e) {
-                this.alertWriter.writeError("Cannot send HTTP message to Levo. Status code(" + e.getStatusCode() + "): " + e.getMessage());
+                this.alertWriter.writeErrorRateLimited(
+                        "send-failed:" + e.getStatusCode(),
+                        "Cannot send HTTP message to Levo. Status code(" + e.getStatusCode() + "): " + e.getMessage());
             } catch (JsonProcessingException e) {
-                this.alertWriter.writeError("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
+                this.alertWriter.writeErrorRateLimited(
+                        "send-failed:json",
+                        "Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
             } catch (Exception e) {
-                this.alertWriter.writeError("Cannot send HTTP message to Levo: " + e.getMessage());
+                this.alertWriter.writeErrorRateLimited(
+                        "send-failed:generic",
+                        "Cannot send HTTP message to Levo: " + e.getMessage());
             }
         });
     }
@@ -174,13 +180,30 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         return true;
     }
 
+    private void logDroppedContentType(String side, String contentType) {
+        String display = (contentType == null || contentType.isBlank()) ? "(missing)" : contentType;
+        String key = "drop-" + side + ":" + mediaTypeKey(contentType);
+        this.alertWriter.writeInfoRateLimited(key,
+                "Dropping because " + side + " content-type '" + display + "' is not instrumented");
+    }
+
+    private static String mediaTypeKey(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return "(missing)";
+        }
+        int semicolon = contentType.indexOf(';');
+        String mediaType = semicolon >= 0 ? contentType.substring(0, semicolon) : contentType;
+        return mediaType.trim().toLowerCase();
+    }
+
     private HttpMessage convertToHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) {
         HttpMessage.Request request = new HttpMessage.Request();
         request.setHeaders(convertHeadersToMap(reqInfo.getHeaders()));
 
         // Ignore if the request body isn't acceptable content type
-        if (shouldDropMessage(request.getHeaders().get(CONTENT_TYPE_HEADER))) {
-            this.alertWriter.writeInfo("Dropping because of content-type header not present");
+        String requestContentType = request.getHeaders().get(CONTENT_TYPE_HEADER);
+        if (shouldDropMessage(requestContentType)) {
+            logDroppedContentType("request", requestContentType);
             return null;
         }
 
@@ -212,9 +235,10 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         }
 
         // Ignore if the response isn't acceptable content type
-        String contentType = response.getHeaders().get(CONTENT_TYPE_HEADER);
+        Map<String, String> responseHeadersMap = response.getHeaders();
+        String contentType = responseHeadersMap == null ? null : responseHeadersMap.get(CONTENT_TYPE_HEADER);
         if (shouldDropMessage(contentType)) {
-            this.alertWriter.writeInfo("Dropping because content-type not being instrumented.");
+            logDroppedContentType("response", contentType);
             return null;
         }
 

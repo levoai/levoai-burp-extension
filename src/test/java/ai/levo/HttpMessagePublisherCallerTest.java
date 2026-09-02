@@ -163,7 +163,7 @@ class HttpMessagePublisherCallerTest {
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
 
         // No need to await executor - drop happens synchronously in convertToHttpMessage
-        verify(callbacks).printOutput(contains("Dropping because of content-type"));
+        verify(callbacks).printOutput(contains("Dropping because request content-type 'image/png' is not instrumented"));
         verify(callbacks, never()).issueAlert(anyString());
     }
 
@@ -190,7 +190,7 @@ class HttpMessagePublisherCallerTest {
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
                 "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\n\r\n".getBytes());
 
-        verify(callbacks).printOutput(contains("Dropping because content-type not being instrumented"));
+        verify(callbacks).printOutput(contains("Dropping because response content-type 'image/png' is not instrumented"));
         verify(callbacks, never()).issueAlert(anyString());
     }
 
