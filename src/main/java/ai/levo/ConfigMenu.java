@@ -266,7 +266,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             EXTENSION_MENU_CONFIGURE_URL,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeError("Cannot update Satellite URL: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Satellite URL: " + exp.getMessage());
                 }
             }
         });
@@ -304,7 +304,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             title,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeError("Cannot update Organization ID: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Organization ID: " + exp.getMessage());
                 }
             }
         });
@@ -342,7 +342,7 @@ public class ConfigMenu implements Runnable, IExtensionStateListener {
                             title,
                             JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception exp) {
-                    ConfigMenu.this.alertWriter.writeError("Cannot update Environment: " + exp.getMessage());
+                    ConfigMenu.this.alertWriter.writeAlert("Cannot update Environment: " + exp.getMessage());
                 }
             }
         });
