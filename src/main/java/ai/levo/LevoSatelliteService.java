@@ -6,7 +6,7 @@ import burp.IExtensionHelpers;
 import burp.IHttpRequestResponse;
 import burp.IHttpService;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.net.MalformedURLException;
 import java.net.URL;
