@@ -96,9 +96,9 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             this.alertWriter.writeAlert("Sent the HTTP message for: "
                     + reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath() + " to Levo's Satellite.");
         } catch (SatelliteMessageFailed e) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo. Status code("+ e.getStatusCode() +"): " + e.getMessage());
+            this.alertWriter.writeError("Cannot send HTTP message to Levo. Status code("+ e.getStatusCode() +"): " + e.getMessage());
         } catch (JsonProcessingException e) {
-            this.alertWriter.writeAlert("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
+            this.alertWriter.writeError("Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
         }
     }
 
