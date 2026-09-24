@@ -117,16 +117,17 @@ class HttpMessagePublisherDropLogTest {
     void satellite401_isRateLimitedToErrorsTab() throws Exception {
         stubAcceptedJsonRoundTrip();
         String errorBody = "{\"error\":{\"code\":401,\"message\":\"Authentication required\",\"subcode\":\"unauthorized\"}}";
-        when(satelliteService.sendHttpMessage(any())).thenThrow(
-                new SatelliteMessageFailed(errorBody, (short) 401));
+        doThrow(new SatelliteMessageFailed(errorBody, (short) 401))
+                .when(satelliteService).sendHttpMessage(any());
 
         publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
         publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
         publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
         awaitExecutor();
 
+        verify(satelliteService, times(6)).sendHttpMessage(any());
         verify(callbacks, times(1)).printError(
-                "Cannot send HTTP message to Levo. Status code(401): " + errorBody);
+                "Sending to Levo is enabled, but the trace could not be delivered to Satellite. Status code(401): " + errorBody);
         verify(callbacks, never()).printOutput(contains("Cannot send"));
         verify(callbacks, never()).issueAlert(anyString());
     }
@@ -145,8 +146,8 @@ class HttpMessagePublisherDropLogTest {
 
         stubAcceptedJsonRoundTrip();
         String errorBody = "{\"error\":{\"code\":401,\"message\":\"Authentication required\",\"subcode\":\"unauthorized\"}}";
-        when(satelliteService.sendHttpMessage(any())).thenThrow(
-                new SatelliteMessageFailed(errorBody, (short) 401));
+        doThrow(new SatelliteMessageFailed(errorBody, (short) 401))
+                .when(satelliteService).sendHttpMessage(any());
 
         publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
         publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
@@ -156,7 +157,7 @@ class HttpMessagePublisherDropLogTest {
         publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
         awaitExecutor();
 
-        String message = "Cannot send HTTP message to Levo. Status code(401): " + errorBody;
+        String message = "Sending to Levo is enabled, but the trace could not be delivered to Satellite. Status code(401): " + errorBody;
         verify(callbacks).printError(message);
         verify(callbacks).printError(message + " (2 similar messages suppressed)");
     }

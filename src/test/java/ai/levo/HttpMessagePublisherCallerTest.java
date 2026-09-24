@@ -100,15 +100,16 @@ class HttpMessagePublisherCallerTest {
     @Test
     void sendHttpMessage_onSatelliteMessageFailed_routesToPrintError_neverIssueAlert() throws Exception {
         setupValidRequest();
-        when(satelliteService.sendHttpMessage(any()))
-                .thenThrow(new SatelliteMessageFailed("Connection refused", (short) 500));
+        doThrow(new SatelliteMessageFailed("Connection refused", (short) 500))
+                .when(satelliteService).sendHttpMessage(any());
 
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
 
         awaitExecutor();
 
-        verify(callbacks).printError(contains("Cannot send HTTP message to Levo"));
+        verify(satelliteService, times(2)).sendHttpMessage(any());
+        verify(callbacks).printError(contains("could not be delivered to Satellite"));
         verify(callbacks).printError(contains("Status code(500)"));
         verify(callbacks, never()).issueAlert(anyString());
         verify(callbacks, never()).printOutput(contains("Cannot send"));
@@ -117,15 +118,16 @@ class HttpMessagePublisherCallerTest {
     @Test
     void sendHttpMessage_onJsonProcessingException_routesToPrintError_neverIssueAlert() throws Exception {
         setupValidRequest();
-        when(satelliteService.sendHttpMessage(any()))
-                .thenThrow(new JsonProcessingException("Parse error") {});
+        doThrow(new JsonProcessingException("Parse error") {})
+                .when(satelliteService).sendHttpMessage(any());
 
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
 
         awaitExecutor();
 
-        verify(callbacks).printError(contains("Cannot send HTTP message to Levo"));
+        verify(satelliteService, times(2)).sendHttpMessage(any());
+        verify(callbacks).printError(contains("could not be delivered to Satellite"));
         verify(callbacks).printError(contains("Can't parse the HTTP message to JSON"));
         verify(callbacks, never()).issueAlert(anyString());
     }
@@ -133,17 +135,69 @@ class HttpMessagePublisherCallerTest {
     @Test
     void sendHttpMessage_onGenericException_routesToPrintError_neverIssueAlert() throws Exception {
         setupValidRequest();
-        when(satelliteService.sendHttpMessage(any()))
-                .thenThrow(new RuntimeException("Network error"));
+        doThrow(new RuntimeException("Network error"))
+                .when(satelliteService).sendHttpMessage(any());
 
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
 
         awaitExecutor();
 
-        verify(callbacks).printError(contains("Cannot send HTTP message to Levo"));
+        verify(satelliteService, times(2)).sendHttpMessage(any());
+        verify(callbacks).printError(contains("could not be delivered to Satellite"));
         verify(callbacks).printError(contains("Network error"));
         verify(callbacks, never()).issueAlert(anyString());
+    }
+
+    @Test
+    void sendHttpMessage_retriesOnceThenSucceeds_logsSentAndNoError() throws Exception {
+        setupValidRequest();
+        doThrow(new SatelliteMessageFailed("Connection refused", (short) 0))
+                .doNothing()
+                .when(satelliteService).sendHttpMessage(any());
+
+        publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
+
+        awaitExecutor();
+
+        verify(satelliteService, times(2)).sendHttpMessage(any());
+        verify(callbacks).printOutput(contains("Sent the HTTP message for:"));
+        verify(callbacks, never()).printError(anyString());
+    }
+
+    @Test
+    void sendHttpMessage_interruptedWorker_doesNotRetryOrLog() throws Exception {
+        setupValidRequest();
+        doAnswer(invocation -> {
+            Thread.currentThread().interrupt();
+            throw new SatelliteMessageFailed("interrupted", (short) 0);
+        }).when(satelliteService).sendHttpMessage(any());
+
+        publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
+
+        awaitExecutor();
+
+        verify(satelliteService, times(1)).sendHttpMessage(any());
+        verify(callbacks, never()).printError(anyString());
+    }
+
+    @Test
+    void sendHttpMessage_sendingDisabledAfterFailure_doesNotRetryOrLog() throws Exception {
+        setupValidRequest();
+        doAnswer(invocation -> {
+            ConfigMenu.IS_SENDING_ENABLED = false;
+            throw new SatelliteMessageFailed("Connection refused", (short) 0);
+        }).when(satelliteService).sendHttpMessage(any());
+
+        publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}".getBytes());
+
+        awaitExecutor();
+
+        verify(satelliteService, times(1)).sendHttpMessage(any());
+        verify(callbacks, never()).printError(anyString());
     }
 
     @Test
@@ -231,11 +285,11 @@ class HttpMessagePublisherCallerTest {
         CountDownLatch satelliteEntered = new CountDownLatch(1);
         CountDownLatch satelliteRelease = new CountDownLatch(1);
         
-        when(satelliteService.sendHttpMessage(any())).thenAnswer(invocation -> {
+        doAnswer(invocation -> {
             satelliteEntered.countDown();
             satelliteRelease.await(10, TimeUnit.SECONDS);
             return null;
-        });
+        }).when(satelliteService).sendHttpMessage(any());
 
         long startTime = System.currentTimeMillis();
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
@@ -258,11 +312,11 @@ class HttpMessagePublisherCallerTest {
         CountDownLatch blockWorker = new CountDownLatch(1);
         AtomicBoolean firstCallMade = new AtomicBoolean(false);
         
-        when(satelliteService.sendHttpMessage(any())).thenAnswer(invocation -> {
+        doAnswer(invocation -> {
             firstCallMade.set(true);
             blockWorker.await(30, TimeUnit.SECONDS);
             return null;
-        });
+        }).when(satelliteService).sendHttpMessage(any());
 
         // Submit first message - this will start executing and block the worker
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
@@ -297,11 +351,11 @@ class HttpMessagePublisherCallerTest {
         CountDownLatch workerStarted = new CountDownLatch(1);
         
         // Make satellite slow so tasks queue up
-        when(satelliteService.sendHttpMessage(any())).thenAnswer(invocation -> {
+        doAnswer(invocation -> {
             workerStarted.countDown();
             blockWorker.await(30, TimeUnit.SECONDS);
             return null;
-        });
+        }).when(satelliteService).sendHttpMessage(any());
 
         // Submit first message that will block the worker
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",
@@ -353,7 +407,7 @@ class HttpMessagePublisherCallerTest {
         setupValidRequest();
         CountDownLatch blockForever = new CountDownLatch(1);
         
-        when(satelliteService.sendHttpMessage(any())).thenAnswer(invocation -> {
+        doAnswer(invocation -> {
             // Block indefinitely (will be interrupted by shutdownNow)
             try {
                 blockForever.await();
@@ -361,7 +415,7 @@ class HttpMessagePublisherCallerTest {
                 Thread.currentThread().interrupt();
             }
             return null;
-        });
+        }).when(satelliteService).sendHttpMessage(any());
 
         // Submit a message that will block
         publisher.sendHttpMessage(requestInfo, "request".getBytes(), "200",

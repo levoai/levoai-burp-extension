@@ -24,15 +24,26 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     private static final String DEFAULT_ENVIRONMENT = "staging";
     private static final String CONTENT_TYPE_HEADER = "content-type";
 
-    private static final List<String> ACCEPTED_CONTENT_TYPES = Arrays.asList(
+    private static final Set<String> ACCEPTED_CONTENT_TYPES = Set.of(
             "application/json",
             "application/x-www-form-urlencoded",
             "application/pdf",
             "text/json",
-            "text/plain"
+            "text/plain",
+            "application/xml",
+            "text/xml",
+            "application/soap+xml",
+            "application/problem+json",
+            "application/vnd.api+json",
+            "application/hal+json",
+            "application/ld+json",
+            "application/scim+json",
+            "application/merge-patch+json"
     );
     // Don't send the response body for these content types
-    private static final Set<String> DROP_CONTENT_OF_TYPES = Set.of("application/pdf");
+    private static final String PDF_MEDIA_TYPE = "application/pdf";
+    private static final int SATELLITE_SEND_ATTEMPTS = 2;
+    private static final long QUEUE_DROP_LOG_INTERVAL_MS = AlertWriter.RATE_LIMIT_WINDOW_MS;
     private static final String SERVICE_NAME_RESOURCE_KEY = "service_name";
     private static final String SENSOR_TYPE_KEY = "sensor_type";
     private static final String SENSOR_TYPE_VALUE = "BURP_EXTENSION";
@@ -70,6 +81,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     private final LevoSatelliteService satelliteService;
     private final ThreadPoolExecutor publishExecutor;
     private final AtomicLong droppedCount = new AtomicLong();
+    private final AtomicLong lastQueueDropLogAtMs = new AtomicLong();
 
     public HttpMessagePublisher(LevoSatelliteService satelliteService, AlertWriter alertWriter, IBurpExtenderCallbacks callbacks) {
         this.alertWriter = alertWriter;
@@ -98,31 +110,53 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
         final String urlForLog = reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath();
 
-        publishExecutor.execute(() -> {
-            // Re-check the send-enabled flag here so messages enqueued while sending was
-            // enabled are NOT exfiltrated after the user disables "Send traffic to Levo".
-            // The listener stops enqueuing immediately on toggle-off, but tasks already in
-            // the queue would otherwise still execute.
+        publishExecutor.execute(() -> deliverToSatellite(httpMessage, urlForLog));
+    }
+
+    private void deliverToSatellite(HttpMessage httpMessage, String urlForLog) {
+        // Re-check the send-enabled flag here so messages enqueued while sending was
+        // enabled are NOT exfiltrated after the user disables "Send traffic to Levo".
+        // The listener stops enqueuing immediately on toggle-off, but tasks already in
+        // the queue would otherwise still execute.
+        Exception lastFailure = null;
+        for (int attempt = 0; attempt < SATELLITE_SEND_ATTEMPTS; attempt++) {
             if (!ConfigMenu.IS_SENDING_ENABLED) {
                 return;
             }
             try {
                 satelliteService.sendHttpMessage(httpMessage);
                 this.alertWriter.writeInfo("Sent the HTTP message for: " + urlForLog + " to Levo's Satellite.");
-            } catch (SatelliteMessageFailed e) {
-                this.alertWriter.writeErrorRateLimited(
-                        "send-failed:" + e.getStatusCode(),
-                        "Cannot send HTTP message to Levo. Status code(" + e.getStatusCode() + "): " + e.getMessage());
-            } catch (JsonProcessingException e) {
-                this.alertWriter.writeErrorRateLimited(
-                        "send-failed:json",
-                        "Cannot send HTTP message to Levo: Can't parse the HTTP message to JSON.");
+                return;
             } catch (Exception e) {
-                this.alertWriter.writeErrorRateLimited(
-                        "send-failed:generic",
-                        "Cannot send HTTP message to Levo: " + e.getMessage());
+                lastFailure = e;
+                // Unload interrupts the worker. A second attempt would run during shutdown.
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
             }
-        });
+        }
+        logSendFailure(lastFailure);
+    }
+
+    private void logSendFailure(Exception e) {
+        if (!ConfigMenu.IS_SENDING_ENABLED || e == null) {
+            return;
+        }
+        if (e instanceof SatelliteMessageFailed) {
+            SatelliteMessageFailed failed = (SatelliteMessageFailed) e;
+            this.alertWriter.writeErrorRateLimited(
+                    "send-failed:" + failed.getStatusCode(),
+                    "Sending to Levo is enabled, but the trace could not be delivered to Satellite. Status code("
+                            + failed.getStatusCode() + "): " + failed.getMessage());
+        } else if (e instanceof JsonProcessingException) {
+            this.alertWriter.writeErrorRateLimited(
+                    "send-failed:json",
+                    "Sending to Levo is enabled, but the trace could not be delivered to Satellite: Can't parse the HTTP message to JSON.");
+        } else {
+            this.alertWriter.writeErrorRateLimited(
+                    "send-failed:generic",
+                    "Sending to Levo is enabled, but the trace could not be delivered to Satellite: " + e.getMessage());
+        }
     }
 
     /**
@@ -138,15 +172,29 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         while (!exec.isShutdown()) {
             Runnable evicted = q.poll();
             if (evicted != null) {
-                long total = droppedCount.incrementAndGet();
-                if (total == 1 || total % 100 == 0) {
-                    this.alertWriter.writeInfo("Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
-                }
+                noteQueueDrop();
             }
             if (q.offer(r)) {
                 return;
             }
             // Another producer refilled the queue between poll() and offer() — loop and drop another.
+        }
+    }
+
+    /**
+     * Log the first drop, every 100th drop, and at least once per
+     * {@link #QUEUE_DROP_LOG_INTERVAL_MS} while drops continue. The total in the
+     * line is the count at the moment the line is emitted.
+     */
+    private void noteQueueDrop() {
+        long total = droppedCount.incrementAndGet();
+        long now = System.currentTimeMillis();
+        long last = lastQueueDropLogAtMs.get();
+        boolean milestone = total == 1 || total % 100 == 0;
+        boolean windowElapsed = now - last >= QUEUE_DROP_LOG_INTERVAL_MS;
+        if ((milestone || windowElapsed) && lastQueueDropLogAtMs.compareAndSet(last, now)) {
+            this.alertWriter.writeInfo(
+                    "Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
         }
     }
 
@@ -166,18 +214,30 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         return publishExecutor;
     }
 
-    private boolean shouldDropMessage(String contentType) {
+    /**
+     * A missing Content-Type is kept. Comparison is on the media type only, so
+     * {@code Application/JSON; charset=UTF-8} matches {@code application/json}.
+     * Any media type containing {@code graphql}, and the {@code application/grpc}
+     * family ({@code application/grpc}, {@code application/grpc+…},
+     * {@code application/grpc-…}), are accepted along with {@link #ACCEPTED_CONTENT_TYPES}.
+     */
+    static boolean shouldDropContentType(String contentType) {
         if (contentType == null) {
             return false;
         }
-
-        for (String acceptedContentType : ACCEPTED_CONTENT_TYPES) {
-            if (contentType.startsWith(acceptedContentType)) {
-                return false;
-            }
+        String mediaType = mediaTypeKey(contentType);
+        if ("(missing)".equals(mediaType)) {
+            return true;
         }
-
-        return true;
+        if (mediaType.contains("graphql")) {
+            return false;
+        }
+        if ("application/grpc".equals(mediaType)
+                || mediaType.startsWith("application/grpc+")
+                || mediaType.startsWith("application/grpc-")) {
+            return false;
+        }
+        return !ACCEPTED_CONTENT_TYPES.contains(mediaType);
     }
 
     private void logDroppedContentType(String side, String contentType) {
@@ -202,7 +262,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
         // Ignore if the request body isn't acceptable content type
         String requestContentType = request.getHeaders().get(CONTENT_TYPE_HEADER);
-        if (shouldDropMessage(requestContentType)) {
+        if (shouldDropContentType(requestContentType)) {
             logDroppedContentType("request", requestContentType);
             return null;
         }
@@ -237,12 +297,12 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         // Ignore if the response isn't acceptable content type
         Map<String, String> responseHeadersMap = response.getHeaders();
         String contentType = responseHeadersMap == null ? null : responseHeadersMap.get(CONTENT_TYPE_HEADER);
-        if (shouldDropMessage(contentType)) {
+        if (shouldDropContentType(contentType)) {
             logDroppedContentType("response", contentType);
             return null;
         }
 
-        if (contentType != null && DROP_CONTENT_OF_TYPES.contains(contentType)) {
+        if (PDF_MEDIA_TYPE.equals(mediaTypeKey(contentType))) {
             alertWriter.writeInfo("Not sending response body for content-type: " + contentType + " to Levo.");
             response.setBody("");
         } else {

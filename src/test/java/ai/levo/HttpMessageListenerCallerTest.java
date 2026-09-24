@@ -1,6 +1,7 @@
 package ai.levo;
 
 import burp.*;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,6 +49,12 @@ class HttpMessageListenerCallerTest {
         httpMessageListener = new HttpMessageListener(httpMessagePublisher, alertWriter, callbacks);
     }
 
+    @AfterEach
+    void tearDown() {
+        ConfigMenu.IS_SENDING_ENABLED = false;
+        ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = false;
+    }
+
     @Test
     void processHttpMessage_whenExceptionOccurs_shouldRouteErrorToPrintError_notPrintOutputOrIssueAlert() throws Exception {
         when(callbacks.getToolName(anyInt())).thenReturn("proxy");
@@ -91,5 +98,36 @@ class HttpMessageListenerCallerTest {
         verify(callbacks).printError(contains("Network failure"));
         verify(callbacks, never()).printOutput(contains("Cannot send"));
         verify(callbacks, never()).issueAlert(anyString());
+    }
+
+    @Test
+    void processHttpMessage_spiderAndCrawlerResponses_areForwarded() throws Exception {
+        when(callbacks.getHelpers()).thenReturn(helpers);
+        when(helpers.analyzeRequest(any(IHttpRequestResponse.class))).thenReturn(requestInfo);
+        when(requestInfo.getUrl()).thenReturn(new URL("http://example.com/api/data"));
+        when(helpers.analyzeResponse(any())).thenReturn(responseInfo);
+        when(responseInfo.getStatusCode()).thenReturn((short) 200);
+        when(httpRequestResponse.getResponse()).thenReturn(new byte[0]);
+        when(httpRequestResponse.getRequest()).thenReturn(new byte[0]);
+
+        ConfigMenu.IS_SENDING_ENABLED = true;
+        ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = false;
+
+        when(callbacks.getToolName(anyInt())).thenReturn("Spider");
+        httpMessageListener.processHttpMessage(8, false, httpRequestResponse);
+
+        when(callbacks.getToolName(anyInt())).thenReturn("Crawler");
+        httpMessageListener.processHttpMessage(8, false, httpRequestResponse);
+
+        verify(httpMessagePublisher, times(2)).sendHttpMessage(any(), any(), eq("200"), any());
+    }
+
+    @Test
+    void processHttpMessage_nullToolName_isIgnored() {
+        when(callbacks.getToolName(anyInt())).thenReturn(null);
+
+        httpMessageListener.processHttpMessage(0, false, httpRequestResponse);
+
+        verifyNoInteractions(httpMessagePublisher);
     }
 }

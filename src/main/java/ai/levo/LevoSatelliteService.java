@@ -1,58 +1,67 @@
 package ai.levo;
 
 import ai.levo.exceptions.SatelliteMessageFailed;
-import burp.IBurpExtenderCallbacks;
-import burp.IExtensionHelpers;
-import burp.IHttpRequestResponse;
-import burp.IHttpService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
-import java.util.ArrayList;
+import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 public class LevoSatelliteService {
 
-    public static LevoSatelliteService create(String satelliteUrl, String organizationId, String environment, IBurpExtenderCallbacks callbacks) throws MalformedURLException {
-        return new LevoSatelliteService(callbacks, satelliteUrl, organizationId, environment);
-    }
-
-    private final IExtensionHelpers helpers;
-    private final IBurpExtenderCallbacks callbacks;
+    private static final String TRACES_PATH = "/1.0/ebpf/traces";
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
 
     /**
-     * Immutable pair of the destination {@link IHttpService} and the matching Host header.
-     * Bundling them together lets the EDT swap both values atomically via a single
-     * {@code volatile} write so a reader (the publish worker) can never observe a
-     * mismatched pair — e.g., the new service with the old Host header — when the
-     * Satellite URL is changed at runtime. That matters if anything between Burp and
-     * the Satellite routes by Host header (virtual hosting / fronting proxy).
+     * Direct connection. Burp's HTTP stack would apply match-and-replace, session
+     * rules, and the upstream proxy, and could capture the Satellite post again.
      */
-    private static final class Endpoint {
-        final IHttpService service;
-        final String hostHeader;
-
-        Endpoint(IHttpService service, String hostHeader) {
-            this.service = service;
-            this.hostHeader = hostHeader;
+    private static final ProxySelector DIRECT = new ProxySelector() {
+        @Override
+        public List<Proxy> select(URI uri) {
+            return Collections.singletonList(Proxy.NO_PROXY);
         }
+
+        @Override
+        public void connectFailed(URI uri, SocketAddress sa, IOException ioe) {
+        }
+    };
+
+    public static LevoSatelliteService create(String satelliteUrl, String organizationId, String environment) throws MalformedURLException {
+        return new LevoSatelliteService(satelliteUrl, organizationId, environment);
     }
 
     // Mutable config updated from the Swing EDT (ConfigMenu actions) and read from the
     // publish worker thread. volatile gives the worker visibility of EDT writes without
-    // synchronization. endpoint is a single atomic snapshot of {service, hostHeader}.
-    private volatile Endpoint endpoint;
+    // synchronization. satelliteUrl is swapped as a single reference.
+    private volatile URL satelliteUrl;
     private volatile String organizationId;
     private volatile String environment;
+    private final HttpClient httpClient;
 
-    public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl, String organizationId, String environment) throws MalformedURLException {
-        this.helpers = callbacks.getHelpers();
-        this.callbacks = callbacks;
-        this.endpoint = buildEndpoint(new URL(satelliteUrl));
+    public LevoSatelliteService(String satelliteUrl, String organizationId, String environment) throws MalformedURLException {
+        this.satelliteUrl = new URL(satelliteUrl);
         this.organizationId = organizationId;
         this.environment = environment;
+        this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(CONNECT_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .proxy(DIRECT)
+                .build();
     }
 
     public void updateSatelliteUrl(String satelliteUrl) throws MalformedURLException {
@@ -61,30 +70,8 @@ public class LevoSatelliteService {
         }
         var url = new URL(satelliteUrl);
         if (url.getHost() != null && !url.getHost().isEmpty()) {
-            // Atomic swap — service and hostHeader become visible together.
-            this.endpoint = buildEndpoint(url);
+            this.satelliteUrl = url;
         }
-    }
-
-    private Endpoint buildEndpoint(URL url) {
-        var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-        var svc = helpers.buildHttpService(url.getHost(), port, url.getProtocol().equals("https"));
-        return new Endpoint(svc, buildHostHeader(url));
-    }
-
-    /**
-     * Builds the Host header value per RFC 7230.
-     * Omits the port number if it matches the default port (80 for HTTP, 443 for HTTPS).
-     *
-     * @param url The URL to extract host header from
-     * @return Host header value (e.g., "example.com" or "example.com:8443")
-     */
-    private String buildHostHeader(URL url) {
-        var port = url.getPort() == -1 ? url.getDefaultPort() : url.getPort();
-        if (port == url.getDefaultPort()) {
-            return url.getHost();
-        }
-        return url.getHost() + ":" + port;
     }
 
     public void updateOrganizationId(String organizationId) {
@@ -99,41 +86,60 @@ public class LevoSatelliteService {
         return this.environment;
     }
 
-    public IHttpRequestResponse sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
+    public void sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
         if (organizationId == null || organizationId.isEmpty()) {
             throw new SatelliteMessageFailed("Organization ID is not set", (short) 400);
         }
         if (!OrganizationId.isValid(organizationId)) {
             throw new SatelliteMessageFailed(OrganizationId.validationMessage(organizationId), (short) 400);
         }
-        // Read the endpoint snapshot once so service and hostHeader stay consistent
-        // even if the EDT swaps the endpoint mid-send.
-        Endpoint ep = this.endpoint;
+        // Read the URL snapshot once so a runtime change can't split host and port.
+        URL base = this.satelliteUrl;
+        String orgId = this.organizationId;
         var mapper = new ObjectMapper();
         var jsonBody = mapper.writeValueAsString(httpMessage);
-        byte[] body = helpers.stringToBytes(jsonBody);
-        List<String> newHeaders = new ArrayList<>();
-        newHeaders.add("POST /1.0/ebpf/traces HTTP/1.1");
-        // Set the host header explicitly since the host is being set as null sometimes.
-        newHeaders.add("Host: " + ep.hostHeader);
-        newHeaders.add("Content-Type: application/json");
-        newHeaders.add("x-levo-organization-id: " + organizationId);
-        var message = helpers.buildHttpMessage(newHeaders, body);
-        var requestResponse = this.callbacks.makeHttpRequest(ep.service, message, false);
 
-        var response = requestResponse.getResponse();
-        if (response == null) {
-            throw new SatelliteMessageFailed("Failed to connect to Levo Satellite. Connection refused or network error.", (short)0);
-        }
-        var responseInfo = helpers.analyzeResponse(response);
-
-        if (responseInfo.getStatusCode() >= 400) {
-            int len = response.length - responseInfo.getBodyOffset();
-            var result = new byte[len];
-            System.arraycopy(response, responseInfo.getBodyOffset(), result, 0, len);
-            throw new SatelliteMessageFailed(new String(result), responseInfo.getStatusCode());
+        HttpRequest request;
+        try {
+            request = HttpRequest.newBuilder(tracesUri(base))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Content-Type", "application/json")
+                    .header("x-levo-organization-id", orgId)
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+        } catch (URISyntaxException e) {
+            throw new SatelliteMessageFailed("Invalid Satellite URL: " + e.getMessage(), (short) 400);
         }
 
-        return requestResponse;
+        HttpResponse<String> response;
+        try {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException e) {
+            throw new SatelliteMessageFailed(
+                    "Failed to connect to Levo Satellite. " + e.getMessage(), (short) 0);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SatelliteMessageFailed(
+                    "Failed to connect to Levo Satellite. Interrupted.", (short) 0);
+        }
+
+        int status = response.statusCode();
+        if (status < 200 || status >= 300) {
+            String body = response.body() == null ? "" : response.body();
+            throw new SatelliteMessageFailed(body, (short) status);
+        }
+    }
+
+    /**
+     * Satellite ingest is always {@code /1.0/ebpf/traces}. A path on the configured
+     * URL is not part of the ingest route. Default ports are omitted so the Host
+     * header stays {@code example.com}, not {@code example.com:443}.
+     */
+    static URI tracesUri(URL base) throws URISyntaxException {
+        int port = base.getPort();
+        if (port == base.getDefaultPort()) {
+            port = -1;
+        }
+        return new URI(base.getProtocol(), null, base.getHost(), port, TRACES_PATH, null, null);
     }
 }

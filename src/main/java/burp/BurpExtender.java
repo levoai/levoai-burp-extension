@@ -40,7 +40,7 @@ public class BurpExtender implements IBurpExtender {
                 alertWriter.writeInfo("Sending traffic to Levo's Satellite is paused.");
             }
 
-            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, environment, callbacks);
+            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, environment);
 
             // Init publisher and HTTP listener
             HttpMessagePublisher httpMessagePublisher =
