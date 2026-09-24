@@ -60,6 +60,7 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
 **0.2.2**
  * Send Spider and Crawler traffic, and accept XML, SOAP, gRPC, GraphQL, and common JSON API content types regardless of header capitalization.
  * Post traces directly to Satellite, retry a failed post once, and log when a trace cannot be delivered.
+ * Right-click a message and choose Send to Levo.ai. The message is sent only when its content type is supported; otherwise Burp shows why it was not sent.
 
 **0.2.1**
  * Fixed Host header to omit default port numbers (80 for HTTP, 443 for HTTPS) per RFC 7230 standard.
