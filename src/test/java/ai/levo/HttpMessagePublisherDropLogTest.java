@@ -4,6 +4,7 @@ import ai.levo.exceptions.SatelliteMessageFailed;
 import burp.IBurpExtenderCallbacks;
 import burp.IExtensionHelpers;
 import burp.IRequestInfo;
+import burp.IResponseInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,9 @@ class HttpMessagePublisherDropLogTest {
     private IRequestInfo reqInfo;
 
     @Mock
+    private IResponseInfo responseInfo;
+
+    @Mock
     private LevoSatelliteService satelliteService;
 
     private AtomicLong now;
@@ -58,9 +62,9 @@ class HttpMessagePublisherDropLogTest {
     void droppedResponse_logsContentType_andRateLimitsRepeats() throws Exception {
         stubJsonGetRequest();
 
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/html"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/html"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/html"));
+        send("text/html");
+        send("text/html");
+        send("text/html");
 
         verify(callbacks, times(1)).printOutput(
                 "Dropping because response content-type 'text/html' is not instrumented");
@@ -71,10 +75,8 @@ class HttpMessagePublisherDropLogTest {
     void droppedResponse_includesCharsetInMessage_butRateLimitsByMediaType() throws Exception {
         stubJsonGetRequest();
 
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200",
-                responseBytes("text/html; charset=UTF-8"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200",
-                responseBytes("text/html; charset=utf-8"));
+        send("text/html; charset=UTF-8");
+        send("text/html; charset=utf-8");
 
         verify(callbacks, times(1)).printOutput(
                 "Dropping because response content-type 'text/html; charset=UTF-8' is not instrumented");
@@ -86,11 +88,11 @@ class HttpMessagePublisherDropLogTest {
     void droppedResponse_logsSuppressedCountAfterWindow() throws Exception {
         stubJsonGetRequest();
 
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/css"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/css"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/css"));
+        send("text/css");
+        send("text/css");
+        send("text/css");
         now.addAndGet(AlertWriter.RATE_LIMIT_WINDOW_MS);
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("text/css"));
+        send("text/css");
 
         verify(callbacks).printOutput(
                 "Dropping because response content-type 'text/css' is not instrumented");
@@ -105,7 +107,7 @@ class HttpMessagePublisherDropLogTest {
                 "Content-Type: multipart/form-data; boundary=abc"
         ));
 
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
+        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"), null);
 
         verify(callbacks, times(1)).printOutput(
                 "Dropping because request content-type 'multipart/form-data; boundary=abc' is not instrumented");
@@ -117,16 +119,17 @@ class HttpMessagePublisherDropLogTest {
     void satellite401_isRateLimitedToErrorsTab() throws Exception {
         stubAcceptedJsonRoundTrip();
         String errorBody = "{\"error\":{\"code\":401,\"message\":\"Authentication required\",\"subcode\":\"unauthorized\"}}";
-        when(satelliteService.sendHttpMessage(any())).thenThrow(
-                new SatelliteMessageFailed(errorBody, (short) 401));
+        doThrow(new SatelliteMessageFailed(errorBody, (short) 401))
+                .when(satelliteService).sendHttpMessage(any());
 
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
+        send("application/json");
+        send("application/json");
+        send("application/json");
         awaitExecutor();
 
+        verify(satelliteService, times(3)).sendHttpMessage(any());
         verify(callbacks, times(1)).printError(
-                "Cannot send HTTP message to Levo. Status code(401): " + errorBody);
+                "Sending to Levo is enabled, but the trace could not be delivered to Satellite. Status code(401): " + errorBody);
         verify(callbacks, never()).printOutput(contains("Cannot send"));
         verify(callbacks, never()).issueAlert(anyString());
     }
@@ -145,18 +148,18 @@ class HttpMessagePublisherDropLogTest {
 
         stubAcceptedJsonRoundTrip();
         String errorBody = "{\"error\":{\"code\":401,\"message\":\"Authentication required\",\"subcode\":\"unauthorized\"}}";
-        when(satelliteService.sendHttpMessage(any())).thenThrow(
-                new SatelliteMessageFailed(errorBody, (short) 401));
+        doThrow(new SatelliteMessageFailed(errorBody, (short) 401))
+                .when(satelliteService).sendHttpMessage(any());
 
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
+        send("application/json");
+        send("application/json");
+        send("application/json");
         assertTrue(firstBurstLogged.await(5, TimeUnit.SECONDS), "First 401 burst did not finish logging");
         now.addAndGet(AlertWriter.RATE_LIMIT_WINDOW_MS);
-        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes("application/json"));
+        send("application/json");
         awaitExecutor();
 
-        String message = "Cannot send HTTP message to Levo. Status code(401): " + errorBody;
+        String message = "Sending to Levo is enabled, but the trace could not be delivered to Satellite. Status code(401): " + errorBody;
         verify(callbacks).printError(message);
         verify(callbacks).printError(message + " (2 similar messages suppressed)");
     }
@@ -167,21 +170,28 @@ class HttpMessagePublisherDropLogTest {
         assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "Executor did not terminate in time");
     }
 
+    private void send(String responseContentType) {
+        when(responseInfo.getHeaders()).thenReturn(List.of(
+                "HTTP/1.1 200 OK",
+                "Content-Type: " + responseContentType));
+        publisher.sendHttpMessage(reqInfo, requestBytes(), "200", responseBytes(responseContentType), responseInfo);
+    }
+
     private void stubAcceptedJsonRoundTrip() throws Exception {
         stubJsonGetRequest();
-        when(helpers.base64Encode(anyString())).thenReturn("encoded");
+        when(callbacks.getHelpers()).thenReturn(helpers);
+        when(responseInfo.getBodyOffset()).thenReturn(0);
+        when(helpers.base64Encode(any(byte[].class))).thenReturn("encoded");
     }
 
     private void stubJsonGetRequest() throws Exception {
-        when(callbacks.getHelpers()).thenReturn(helpers);
         when(reqInfo.getHeaders()).thenReturn(List.of(
                 "GET /page HTTP/1.1",
                 "Host: example.com"
         ));
         when(reqInfo.getMethod()).thenReturn("GET");
         when(reqInfo.getUrl()).thenReturn(new URL("http://example.com/page"));
-        when(helpers.bytesToString(any(byte[].class))).thenAnswer(invocation ->
-                new String((byte[]) invocation.getArgument(0), StandardCharsets.UTF_8));
+        when(reqInfo.getBodyOffset()).thenReturn(requestBytes().length);
     }
 
     private static byte[] requestBytes() {

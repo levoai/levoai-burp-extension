@@ -40,7 +40,7 @@ public class BurpExtender implements IBurpExtender {
                 alertWriter.writeInfo("Sending traffic to Levo's Satellite is paused.");
             }
 
-            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, environment, callbacks);
+            var levoSatelliteService = LevoSatelliteService.create(satelliteUrl, organizationId, environment);
 
             // Init publisher and HTTP listener
             HttpMessagePublisher httpMessagePublisher =
@@ -53,6 +53,9 @@ public class BurpExtender implements IBurpExtender {
 
             // Register all listeners
             callbacks.registerHttpListener(httpListener);
+            SendToLevoMenu sendToLevoMenu = new SendToLevoMenu(callbacks, httpMessagePublisher);
+            callbacks.registerContextMenuFactory(sendToLevoMenu);
+            callbacks.registerExtensionStateListener(sendToLevoMenu);
             callbacks.registerExtensionStateListener(httpMessagePublisher);
             callbacks.registerExtensionStateListener(configMenu);
         } catch (Exception e) {

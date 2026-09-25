@@ -2,6 +2,7 @@ package ai.levo;
 
 import burp.*;
 
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -14,7 +15,8 @@ public class HttpMessageListener implements IHttpListener {
             "css,ico,gif,jpg,jpeg,png,bmp,svg,avi,mpg,mpeg,mp3,m3u8,woff,woff2,ttf,eot,mp4,wav,mov,wmv,doc,xls,pdf,zip,tar,7z,rar,tgz,gz,exe,rtp,js";
     private static final Set<String> IGNORED_EXTENSIONS =
             Stream.of(COMMA_SEPARATED_EXTENSIONS.split(",")).map(s -> "." + s).collect(Collectors.toSet());
-    private static final Set<String> SUPPORTED_TOOL_NAMES = Set.of("repeater", "target", "suite", "proxy");
+    private static final Set<String> SUPPORTED_TOOL_NAMES = Set.of(
+            "repeater", "target", "suite", "proxy", "spider", "crawler");
 
     /**
      * Ref on handler that will send HTTP messages to Levo's Satellite.
@@ -52,7 +54,8 @@ public class HttpMessageListener implements IHttpListener {
 
         String toolName = callbacks.getToolName(toolFlag);
         // Ignore if we don't support the tool from which the traffic is coming.
-        if (!SUPPORTED_TOOL_NAMES.contains(toolName.toLowerCase())) {
+        // getToolName returns null for an unrecognized flag; that must not NPE the listener.
+        if (toolName == null || !SUPPORTED_TOOL_NAMES.contains(toolName.toLowerCase(Locale.ROOT))) {
             return;
         }
 
@@ -60,10 +63,11 @@ public class HttpMessageListener implements IHttpListener {
             // Send the HTTP message to Levo's Satellite according to the restriction options
             IRequestInfo reqInfo = callbacks.getHelpers().analyzeRequest(message);
             if (this.shouldSendRequest(reqInfo)) {
-                IResponseInfo responseInfoStatusCode = callbacks.getHelpers().analyzeResponse(message.getResponse());
-                String statusCode = String.valueOf(responseInfoStatusCode.getStatusCode());
+                IResponseInfo responseInfo = callbacks.getHelpers().analyzeResponse(message.getResponse());
+                String statusCode = String.valueOf(responseInfo.getStatusCode());
                 byte[] response = message.getResponse();
-                this.httpMessagePublisher.sendHttpMessage(reqInfo, message.getRequest(), statusCode, response);
+                this.httpMessagePublisher.sendHttpMessage(
+                        reqInfo, message.getRequest(), statusCode, response, responseInfo);
             }
         } catch (Exception e) {
             this.alertWriter.writeError("Cannot send request: " + e.getMessage());
