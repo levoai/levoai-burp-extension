@@ -119,7 +119,7 @@ class HttpMessagePublisherCallerTest {
 
         awaitExecutor();
 
-        verify(satelliteService, times(2)).sendHttpMessage(any());
+        verify(satelliteService, times(1)).sendHttpMessage(any());
         verify(callbacks).printError(contains("could not be delivered to Satellite"));
         verify(callbacks).printError(contains("Status code(500)"));
         verify(callbacks, never()).issueAlert(anyString());
@@ -163,7 +163,7 @@ class HttpMessagePublisherCallerTest {
     @Test
     void sendHttpMessage_retriesOnceThenSucceeds_logsSentAndNoError() throws Exception {
         setupValidRequest();
-        doThrow(new SatelliteMessageFailed("Connection refused", (short) 0))
+        doThrow(new SatelliteMessageFailed("Connection refused", (short) 0, null, true))
                 .doReturn(null)
                 .when(satelliteService).sendHttpMessage(any());
 

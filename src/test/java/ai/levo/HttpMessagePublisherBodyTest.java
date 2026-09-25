@@ -214,7 +214,7 @@ class HttpMessagePublisherBodyTest {
     }
 
     @Test
-    void retryableStatus_waitsForRetryAfterBeforeTheSecondAttempt() throws Exception {
+    void httpStatus_isNotRetriedBecauseSatelliteAlreadyAcceptedThePost() throws Exception {
         publisher.extensionUnloaded();
         AtomicLong slept = new AtomicLong(-1);
         publisher = new HttpMessagePublisher(satelliteService, alertWriter, callbacks,
@@ -225,13 +225,51 @@ class HttpMessagePublisherBodyTest {
         when(requestInfo.getBodyOffset()).thenReturn(Integer.MAX_VALUE);
         when(responseInfo.getBodyOffset()).thenReturn(Integer.MAX_VALUE);
         doThrow(new SatelliteMessageFailed("slow down", (short) 503, 2_500L))
+                .when(satelliteService).sendHttpMessage(any());
+
+        publisher.sendHttpMessage(requestInfo, new byte[] {'x'}, "200", new byte[] {'y'}, responseInfo);
+        awaitExecutor();
+
+        assertEquals(-1L, slept.get());
+        verify(satelliteService, times(1)).sendHttpMessage(any());
+        verify(callbacks).printError(contains("Status code(503)"));
+    }
+
+    @Test
+    void ambiguousTransportFailure_isNotRetried() throws Exception {
+        when(responseInfo.getHeaders()).thenReturn(List.of(
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/json"));
+        when(requestInfo.getBodyOffset()).thenReturn(Integer.MAX_VALUE);
+        when(responseInfo.getBodyOffset()).thenReturn(Integer.MAX_VALUE);
+        doThrow(new SatelliteMessageFailed("request timed out", (short) 0))
+                .when(satelliteService).sendHttpMessage(any());
+
+        publisher.sendHttpMessage(requestInfo, new byte[] {'x'}, "200", new byte[] {'y'}, responseInfo);
+        awaitExecutor();
+
+        verify(satelliteService, times(1)).sendHttpMessage(any());
+    }
+
+    @Test
+    void postThatNeverLeftTheExtension_isRetriedOnce() throws Exception {
+        publisher.extensionUnloaded();
+        AtomicLong slept = new AtomicLong(-1);
+        publisher = new HttpMessagePublisher(satelliteService, alertWriter, callbacks,
+                slept::set, System::nanoTime, () -> 0);
+        when(responseInfo.getHeaders()).thenReturn(List.of(
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/json"));
+        when(requestInfo.getBodyOffset()).thenReturn(Integer.MAX_VALUE);
+        when(responseInfo.getBodyOffset()).thenReturn(Integer.MAX_VALUE);
+        doThrow(new SatelliteMessageFailed("Connection refused", (short) 0, null, true))
                 .doReturn(null)
                 .when(satelliteService).sendHttpMessage(any());
 
         publisher.sendHttpMessage(requestInfo, new byte[] {'x'}, "200", new byte[] {'y'}, responseInfo);
         awaitExecutor();
 
-        assertEquals(2_500L, slept.get());
+        assertEquals(HttpMessagePublisher.RETRY_BASE_DELAY_MS, slept.get());
         verify(satelliteService, times(2)).sendHttpMessage(any());
         verify(callbacks, never()).printError(anyString());
     }

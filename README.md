@@ -59,7 +59,7 @@ Nightly build publishes the jar as an artifact in this repo. You can download an
 
 **0.2.2**
  * Send Spider and Crawler traffic, and accept XML, SOAP, gRPC, GraphQL, and common JSON API content types regardless of header capitalization.
- * Post traces directly to Satellite, retry a transient failure once, and log when a trace cannot be delivered.
+ * Post traces directly to Satellite. Retry once only when the post never reached Satellite, so a second attempt cannot duplicate a trace, and log when a trace cannot be delivered.
  * Right-click a message and choose Send to Levo.ai. The message is queued only when its content type is supported; otherwise Burp shows why it was not sent. The dialog says queued, because Satellite may still reject the trace.
  * Request and response bodies are taken from Burp's body offset, so a blank line inside XML or gRPC is kept. A body larger than 96KB is truncated so the sample still fits what Levo shows, and the publish queue stops accepting traces once about 8MB of body text is already waiting.
 

@@ -6,9 +6,15 @@ import burp.IHttpRequestResponse;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
+import javax.net.ssl.SSLHandshakeException;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URL;
@@ -143,6 +149,20 @@ class LevoSatelliteServiceHttpTest {
                 SatelliteMessageFailed.class, () -> service.sendHttpMessage(new HttpMessage()));
         assertEquals((short) 0, thrown.getStatusCode());
         assertTrue(thrown.getMessage().contains("Failed to connect to Levo Satellite"));
+        assertTrue(thrown.isSafeToRetry());
+    }
+
+    @Test
+    void requestWasNotSent_onlyForFailuresBeforeThePostIsWritten() {
+        assertTrue(LevoSatelliteService.requestWasNotSent(new ConnectException("refused")));
+        assertTrue(LevoSatelliteService.requestWasNotSent(
+                new IOException("wrapped", new UnknownHostException("satellite.example"))));
+        assertTrue(LevoSatelliteService.requestWasNotSent(new HttpConnectTimeoutException("connect timed out")));
+        assertTrue(LevoSatelliteService.requestWasNotSent(new SSLHandshakeException("handshake failed")));
+        assertFalse(LevoSatelliteService.requestWasNotSent(new HttpTimeoutException("request timed out")));
+        assertFalse(LevoSatelliteService.requestWasNotSent(new IOException("Connection reset")));
+        assertFalse(LevoSatelliteService.requestWasNotSent(
+                new IOException("reset", new HttpTimeoutException("request timed out"))));
     }
 
     @Test

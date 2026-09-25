@@ -8,7 +8,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
 import java.net.MalformedURLException;
+import java.net.NoRouteToHostException;
+import java.net.PortUnreachableException;
+import java.net.UnknownHostException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
+import javax.net.ssl.SSLHandshakeException;
 import java.net.Proxy;
 import java.net.ProxySelector;
 import java.net.SocketAddress;
@@ -160,7 +167,10 @@ public class LevoSatelliteService {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         } catch (IOException e) {
             throw new SatelliteMessageFailed(
-                    "Failed to connect to Levo Satellite. " + e.getMessage(), (short) 0);
+                    "Failed to connect to Levo Satellite. " + e.getMessage(),
+                    (short) 0,
+                    null,
+                    requestWasNotSent(e));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new SatelliteMessageFailed(
@@ -191,6 +201,31 @@ public class LevoSatelliteService {
             return text + "...";
         }
         return text;
+    }
+
+    /**
+     * True when {@code error} happened before the HTTP request could be written.
+     * A response timeout or a reset after connect may mean Satellite already
+     * published the trace, and that handler does not dedupe a second POST.
+     */
+    static boolean requestWasNotSent(Throwable error) {
+        boolean notSent = false;
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof HttpTimeoutException && !(current instanceof HttpConnectTimeoutException)) {
+                return false;
+            }
+            if (current instanceof ConnectException
+                    || current instanceof UnknownHostException
+                    || current instanceof NoRouteToHostException
+                    || current instanceof PortUnreachableException
+                    || current instanceof HttpConnectTimeoutException
+                    || current instanceof SSLHandshakeException) {
+                notSent = true;
+            }
+            current = current.getCause();
+        }
+        return notSent;
     }
 
     static Long retryAfterMillis(HttpHeaders headers) {

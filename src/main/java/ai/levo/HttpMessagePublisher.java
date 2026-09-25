@@ -165,10 +165,9 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         // the queue would otherwise still execute.
         //
         // Satellite's /1.0/ebpf/traces handler publishes every POST and does not dedupe
-        // trace_id or span_id, so a retry can record the same exchange twice. The ids are
-        // still assigned once, before the first attempt, and reused. Only transport
-        // failures and statuses that ask the client to try again are retried. A permanent
-        // 4xx or a JSON serialization failure is not.
+        // trace_id or span_id. Retry only when the post was never written, so a second
+        // attempt cannot store the same exchange again. An HTTP status, including 429
+        // and 5xx, means something already accepted the body.
         Exception lastFailure = null;
         for (int attempt = 0; attempt < SATELLITE_SEND_ATTEMPTS; attempt++) {
             if (!ConfigMenu.IS_SENDING_ENABLED) {
@@ -200,17 +199,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     }
 
     private static boolean isRetryable(Exception e) {
-        if (!(e instanceof SatelliteMessageFailed)) {
-            return false;
-        }
-        int status = ((SatelliteMessageFailed) e).getStatusCode();
-        return status == 0
-                || status == 408
-                || status == 429
-                || status == 500
-                || status == 502
-                || status == 503
-                || status == 504;
+        return e instanceof SatelliteMessageFailed && ((SatelliteMessageFailed) e).isSafeToRetry();
     }
 
     private long retryDelayMillis(int attempt, Exception failure) {
