@@ -81,9 +81,8 @@ class TrafficToSatelliteIntegrationTest {
             output.add(invocation.getArgument(0));
             return null;
         }).when(callbacks).printOutput(anyString());
-        when(helpers.bytesToString(any(byte[].class))).thenAnswer(invocation -> latin1(invocation.getArgument(0)));
-        when(helpers.base64Encode(anyString())).thenAnswer(invocation ->
-                Base64.getEncoder().encodeToString(latin1Bytes(invocation.getArgument(0))));
+        when(helpers.base64Encode(any(byte[].class))).thenAnswer(invocation ->
+                Base64.getEncoder().encodeToString(invocation.getArgument(0)));
         when(helpers.analyzeRequest(any(IHttpRequestResponse.class))).thenAnswer(invocation -> {
             IHttpRequestResponse message = invocation.getArgument(0);
             return requestInfo(message.getRequest());
@@ -154,6 +153,34 @@ class TrafficToSatelliteIntegrationTest {
     }
 
     @Test
+    void xmlRequestAndGrpcResponse_keepBytesPastABlankLine() throws Exception {
+        byte[] request = request(
+                "POST /soap HTTP/1.1",
+                "Host: shop.example",
+                "Content-Type: text/xml",
+                "",
+                "<a>",
+                "",
+                "<b>1</b></a>");
+        byte[] grpc = new byte[] {0x00, 0x00, 0x00, 0x00, 0x05, 0x0d, 0x0a, 0x0d, 0x0a, (byte) 0xff};
+        byte[] response = concat(request(
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/grpc",
+                "",
+                ""), grpc);
+
+        listener.processHttpMessage(IBurpExtenderCallbacks.TOOL_PROXY, false, message(request, response));
+
+        assertTrue(posted.await(5, TimeUnit.SECONDS), "Satellite did not receive the trace");
+        JsonNode trace = JSON.readTree(postedBody.get());
+        assertEquals("<a>\r\n\r\n<b>1</b></a>", new String(Base64.getDecoder().decode(
+                trace.path("request").path("body").asText()), StandardCharsets.ISO_8859_1));
+        assertArrayEquals(grpc, Base64.getDecoder().decode(trace.path("response").path("body").asText()));
+        assertFalse(trace.path("request").path("truncated").asBoolean());
+        assertFalse(trace.path("response").path("truncated").asBoolean());
+    }
+
+    @Test
     void htmlResponse_isNotPosted() throws Exception {
         byte[] request = request("GET / HTTP/1.1", "Host: www.google.com", "", "");
         byte[] response = request(
@@ -212,7 +239,7 @@ class TrafficToSatelliteIntegrationTest {
                 trace.path("request").path("body").asText()), StandardCharsets.UTF_8));
         assertEquals(1, notices.size());
         assertTrue(notices.get(0).contains("text/html"));
-        assertTrue(notices.get(0).contains("Sent 1 other message."));
+        assertTrue(notices.get(0).contains("Queued 1 other message."));
     }
 
     private boolean outputEventuallyContains(String text) throws InterruptedException {
@@ -243,20 +270,19 @@ class TrafficToSatelliteIntegrationTest {
         return String.join("\r\n", lines).getBytes(StandardCharsets.ISO_8859_1);
     }
 
+    private static byte[] concat(byte[] head, byte[] tail) {
+        byte[] out = new byte[head.length + tail.length];
+        System.arraycopy(head, 0, out, 0, head.length);
+        System.arraycopy(tail, 0, out, head.length, tail.length);
+        return out;
+    }
+
     private static String latin1(byte[] data) {
         char[] chars = new char[data.length];
         for (int i = 0; i < data.length; i++) {
             chars[i] = (char) (data[i] & 0xff);
         }
         return new String(chars);
-    }
-
-    private static byte[] latin1Bytes(String value) {
-        byte[] bytes = new byte[value.length()];
-        for (int i = 0; i < value.length(); i++) {
-            bytes[i] = (byte) value.charAt(i);
-        }
-        return bytes;
     }
 
     private static IRequestInfo requestInfo(byte[] raw) throws Exception {
@@ -269,6 +295,7 @@ class TrafficToSatelliteIntegrationTest {
         when(info.getHeaders()).thenReturn(lines);
         when(info.getMethod()).thenReturn(requestLine[0]);
         when(info.getUrl()).thenReturn(url);
+        when(info.getBodyOffset()).thenReturn(bodyOffset(raw));
         return info;
     }
 
@@ -278,7 +305,17 @@ class TrafficToSatelliteIntegrationTest {
         IResponseInfo info = mock(IResponseInfo.class);
         when(info.getHeaders()).thenReturn(lines);
         when(info.getStatusCode()).thenReturn((short) status);
+        when(info.getBodyOffset()).thenReturn(bodyOffset(raw));
         return info;
+    }
+
+    private static int bodyOffset(byte[] raw) {
+        for (int i = 0; i + 3 < raw.length; i++) {
+            if (raw[i] == '\r' && raw[i + 1] == '\n' && raw[i + 2] == '\r' && raw[i + 3] == '\n') {
+                return i + 4;
+            }
+        }
+        return raw.length;
     }
 
     private static List<String> headerLines(byte[] raw) {

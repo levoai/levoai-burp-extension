@@ -3,6 +3,7 @@ package ai.levo;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -56,8 +57,22 @@ class HttpMessagePublisherContentTypeTest {
         assertTrue(HttpMessagePublisher.shouldDropContentType("application/javascript"));
         assertTrue(HttpMessagePublisher.shouldDropContentType("application/octet-stream"));
         assertTrue(HttpMessagePublisher.shouldDropContentType("application/xhtml+xml"));
+        assertTrue(HttpMessagePublisher.shouldDropContentType("application/notgraphql-binary"));
+        assertTrue(HttpMessagePublisher.shouldDropContentType("text/graphql"));
         assertTrue(HttpMessagePublisher.shouldDropContentType(""));
         assertTrue(HttpMessagePublisher.shouldDropContentType("   "));
+    }
+
+    @Test
+    void acceptsUpperCaseJsonUnderTurkishLocale() {
+        Locale previous = Locale.getDefault();
+        try {
+            Locale.setDefault(new Locale("tr", "TR"));
+            assertFalse(HttpMessagePublisher.shouldDropContentType("APPLICATION/JSON"));
+            assertFalse(HttpMessagePublisher.shouldDropContentType("Application/GraphQL"));
+        } finally {
+            Locale.setDefault(previous);
+        }
     }
 
     @Test

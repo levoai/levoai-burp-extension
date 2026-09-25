@@ -53,7 +53,9 @@ public class BurpExtender implements IBurpExtender {
 
             // Register all listeners
             callbacks.registerHttpListener(httpListener);
-            callbacks.registerContextMenuFactory(new SendToLevoMenu(callbacks, httpMessagePublisher));
+            SendToLevoMenu sendToLevoMenu = new SendToLevoMenu(callbacks, httpMessagePublisher);
+            callbacks.registerContextMenuFactory(sendToLevoMenu);
+            callbacks.registerExtensionStateListener(sendToLevoMenu);
             callbacks.registerExtensionStateListener(httpMessagePublisher);
             callbacks.registerExtensionStateListener(configMenu);
         } catch (Exception e) {

@@ -3,34 +3,63 @@ package ai.levo;
 import burp.IBurpExtenderCallbacks;
 import burp.IContextMenuFactory;
 import burp.IContextMenuInvocation;
+import burp.IExtensionStateListener;
 import burp.IHttpRequestResponse;
 import burp.IRequestInfo;
 import burp.IResponseInfo;
 
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
  * Adds "Send to Levo.ai" to Burp's message context menu.
  * A selected message is sent only when both content types are supported.
  */
-public class SendToLevoMenu implements IContextMenuFactory {
+public class SendToLevoMenu implements IContextMenuFactory, IExtensionStateListener {
 
     static final String MENU_LABEL = "Send to Levo.ai";
+    static final String STILL_SENDING_MESSAGE =
+            "Levo is still sending the messages you selected earlier.\n\nWait for that to finish, then try again.";
     private static final int MAX_REJECTION_LINES = 12;
     private static final int MAX_URL_LENGTH = 120;
 
     private final IBurpExtenderCallbacks callbacks;
     private final HttpMessagePublisher publisher;
+    private final Executor sendExecutor;
 
     public SendToLevoMenu(IBurpExtenderCallbacks callbacks, HttpMessagePublisher publisher) {
+        this(callbacks, publisher, defaultExecutor());
+    }
+
+    SendToLevoMenu(IBurpExtenderCallbacks callbacks, HttpMessagePublisher publisher, Executor sendExecutor) {
         this.callbacks = callbacks;
         this.publisher = publisher;
+        this.sendExecutor = sendExecutor;
+    }
+
+    private static Executor defaultExecutor() {
+        return new ThreadPoolExecutor(
+                1, 1,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(1),
+                r -> {
+                    Thread thread = new Thread(r, "levo-send-to-levo");
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
     @Override
@@ -41,12 +70,24 @@ public class SendToLevoMenu implements IContextMenuFactory {
         }
         IHttpRequestResponse[] messages = Arrays.copyOf(selected, selected.length);
         JMenuItem item = new JMenuItem(MENU_LABEL);
-        item.addActionListener(event -> sendSelected(messages));
+        item.addActionListener(event -> submitSend(messages, this::notifyOnEdt));
         return Collections.singletonList(item);
     }
 
+    /**
+     * Parsing and base64 expansion run on {@link #sendExecutor}, not on Swing's event thread.
+     * The executor holds one running batch and one waiting batch; a further click is told to wait.
+     */
+    void submitSend(IHttpRequestResponse[] messages, Consumer<String> notify) {
+        try {
+            sendExecutor.execute(() -> sendSelected(messages, notify));
+        } catch (RejectedExecutionException ex) {
+            notify.accept(STILL_SENDING_MESSAGE);
+        }
+    }
+
     void sendSelected(IHttpRequestResponse[] messages) {
-        sendSelected(messages, this::showNotification);
+        sendSelected(messages, this::notifyOnEdt);
     }
 
     void sendSelected(IHttpRequestResponse[] messages, Consumer<String> notify) {
@@ -82,7 +123,8 @@ public class SendToLevoMenu implements IContextMenuFactory {
                         requestInfo,
                         message.getRequest(),
                         String.valueOf(responseInfo.getStatusCode()),
-                        message.getResponse());
+                        message.getResponse(),
+                        responseInfo);
                 sent++;
             } catch (RuntimeException e) {
                 otherRejections.add("Could not read one selected message: " + e.getMessage());
@@ -95,9 +137,24 @@ public class SendToLevoMenu implements IContextMenuFactory {
         }
     }
 
+    private void notifyOnEdt(String message) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            showNotification(message);
+        } else {
+            SwingUtilities.invokeLater(() -> showNotification(message));
+        }
+    }
+
     private void showNotification(String message) {
         JOptionPane.showMessageDialog(
                 ConfigMenu.getBurpFrame(), message, "Levo.ai", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    @Override
+    public void extensionUnloaded() {
+        if (sendExecutor instanceof ExecutorService) {
+            ((ExecutorService) sendExecutor).shutdownNow();
+        }
     }
 
     /**
@@ -145,7 +202,7 @@ public class SendToLevoMenu implements IContextMenuFactory {
             text.append("and ").append(hidden).append(" more.\n");
         }
         if (sent > 0) {
-            text.append('\n').append("Sent ").append(sent)
+            text.append('\n').append("Queued ").append(sent)
                     .append(sent == 1 ? " other message." : " other messages.");
         }
         return text.toString().stripTrailing();

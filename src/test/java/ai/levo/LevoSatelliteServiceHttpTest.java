@@ -1,10 +1,13 @@
 package ai.levo;
 
 import ai.levo.exceptions.SatelliteMessageFailed;
+import burp.IBurpExtenderCallbacks;
+import burp.IHttpRequestResponse;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -13,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 class LevoSatelliteServiceHttpTest {
 
@@ -44,7 +48,7 @@ class LevoSatelliteServiceHttpTest {
             HttpMessage message = new HttpMessage();
             message.setTraceId("trace-1");
 
-            service.sendHttpMessage(message);
+            assertNull(service.sendHttpMessage(message));
 
             assertEquals("POST", method.get());
             assertEquals("/1.0/ebpf/traces", path.get());
@@ -76,9 +80,53 @@ class LevoSatelliteServiceHttpTest {
                     SatelliteMessageFailed.class, () -> service.sendHttpMessage(new HttpMessage()));
             assertEquals((short) 500, thrown.getStatusCode());
             assertTrue(thrown.getMessage().contains("nope"));
+            assertNull(thrown.getRetryAfterMillis());
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    void sendHttpMessage_capsErrorBodyAndHonorsRetryAfter() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/1.0/ebpf/traces", exchange -> {
+            byte[] payload = "E".repeat(20_000).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Retry-After", "120");
+            exchange.sendResponseHeaders(503, payload.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(payload);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            LevoSatelliteService service = new LevoSatelliteService(
+                    "http://127.0.0.1:" + port, ORG, "staging");
+
+            SatelliteMessageFailed thrown = assertThrows(
+                    SatelliteMessageFailed.class, () -> service.sendHttpMessage(new HttpMessage()));
+            assertEquals((short) 503, thrown.getStatusCode());
+            assertTrue(thrown.getMessage().endsWith("..."));
+            assertTrue(thrown.getMessage().length() < 1_200);
+            assertEquals(LevoSatelliteService.MAX_RETRY_AFTER_MS, thrown.getRetryAfterMillis());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void deprecatedFactory_doesNotTouchBurpCallbacks() throws Exception {
+        Method create = LevoSatelliteService.class.getMethod(
+                "create", String.class, String.class, String.class, IBurpExtenderCallbacks.class);
+        assertEquals(LevoSatelliteService.class, create.getReturnType());
+        assertNotNull(LevoSatelliteService.class.getConstructor(
+                IBurpExtenderCallbacks.class, String.class, String.class, String.class));
+        Method send = LevoSatelliteService.class.getMethod("sendHttpMessage", HttpMessage.class);
+        assertEquals(IHttpRequestResponse.class, send.getReturnType());
+
+        LevoSatelliteService service = LevoSatelliteService.create(
+                "http://127.0.0.1:9", ORG, "staging", mock(IBurpExtenderCallbacks.class));
+        assertNotNull(service);
     }
 
     @Test

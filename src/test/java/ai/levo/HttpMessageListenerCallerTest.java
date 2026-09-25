@@ -90,7 +90,7 @@ class HttpMessageListenerCallerTest {
         ConfigMenu.ONLY_INCLUDE_REQUESTS_FROM_SCOPE = false;
         
         doThrow(new RuntimeException("Network failure")).when(httpMessagePublisher)
-                .sendHttpMessage(any(), any(), anyString(), any());
+                .sendHttpMessage(any(), any(), anyString(), any(), any());
 
         httpMessageListener.processHttpMessage(4, false, httpRequestResponse);
 
@@ -119,7 +119,7 @@ class HttpMessageListenerCallerTest {
         when(callbacks.getToolName(anyInt())).thenReturn("Crawler");
         httpMessageListener.processHttpMessage(8, false, httpRequestResponse);
 
-        verify(httpMessagePublisher, times(2)).sendHttpMessage(any(), any(), eq("200"), any());
+        verify(httpMessagePublisher, times(2)).sendHttpMessage(any(), any(), eq("200"), any(), eq(responseInfo));
     }
 
     @Test

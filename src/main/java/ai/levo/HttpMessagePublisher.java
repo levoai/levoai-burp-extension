@@ -4,22 +4,26 @@ import ai.levo.exceptions.SatelliteMessageFailed;
 import burp.IBurpExtenderCallbacks;
 import burp.IExtensionStateListener;
 import burp.IRequestInfo;
+import burp.IResponseInfo;
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntSupplier;
+import java.util.function.LongSupplier;
 
 /**
  * Handles the HTTP messages that are received and sends them to Levo's Satellite.
  */
 public class HttpMessagePublisher implements IExtensionStateListener {
 
-    private static final String TWO_LINES_PATTERN = "\r\n\r\n";
-    private static final String NEW_LINE_PATTERN = "\r\n";
     private static final String DEFAULT_SERVICE_NAME = "default";
     private static final String DEFAULT_ENVIRONMENT = "staging";
     private static final String CONTENT_TYPE_HEADER = "content-type";
@@ -43,7 +47,19 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     // Don't send the response body for these content types
     private static final String PDF_MEDIA_TYPE = "application/pdf";
     private static final int SATELLITE_SEND_ATTEMPTS = 2;
-    private static final long QUEUE_DROP_LOG_INTERVAL_MS = AlertWriter.RATE_LIMIT_WINDOW_MS;
+    /**
+     * Largest raw body that still shows up in a portal sample. Satellite's HAR
+     * export blanks a body once its base64 form reaches 128KB
+     * ({@code levoai_e7s.utils.har} {@code MAX_*_BODY_SIZE}). 98,301 raw bytes
+     * encode to 131,068 base64 characters, just under that cap.
+     */
+    static final int MAX_RAW_BODY_BYTES = 98_301;
+    /** Base64 body text retained by tasks waiting on the single publish worker. */
+    static final long MAX_QUEUED_BODY_BYTES = 8L * 1024 * 1024;
+    static final long RETRY_BASE_DELAY_MS = 200L;
+    static final int RETRY_JITTER_BOUND_MS = 100;
+    static final long QUEUE_DROP_LOG_INTERVAL_NS =
+            TimeUnit.MILLISECONDS.toNanos(AlertWriter.RATE_LIMIT_WINDOW_MS);
     private static final String SERVICE_NAME_RESOURCE_KEY = "service_name";
     private static final String SENSOR_TYPE_KEY = "sensor_type";
     private static final String SENSOR_TYPE_VALUE = "BURP_EXTENSION";
@@ -80,13 +96,33 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     private final AlertWriter alertWriter;
     private final LevoSatelliteService satelliteService;
     private final ThreadPoolExecutor publishExecutor;
+    private final Pause pause;
+    private final LongSupplier nanoTime;
+    private final IntSupplier jitter;
     private final AtomicLong droppedCount = new AtomicLong();
-    private final AtomicLong lastQueueDropLogAtMs = new AtomicLong();
+    private final AtomicLong lastQueueDropLogAtNs = new AtomicLong();
+    private final AtomicLong queuedBodyBytes = new AtomicLong();
+
+    @FunctionalInterface
+    interface Pause {
+        void pause(long millis) throws InterruptedException;
+    }
 
     public HttpMessagePublisher(LevoSatelliteService satelliteService, AlertWriter alertWriter, IBurpExtenderCallbacks callbacks) {
+        this(satelliteService, alertWriter, callbacks,
+                Thread::sleep,
+                System::nanoTime,
+                () -> ThreadLocalRandom.current().nextInt(RETRY_JITTER_BOUND_MS));
+    }
+
+    HttpMessagePublisher(LevoSatelliteService satelliteService, AlertWriter alertWriter, IBurpExtenderCallbacks callbacks,
+                         Pause pause, LongSupplier nanoTime, IntSupplier jitter) {
         this.alertWriter = alertWriter;
         this.callbacks = callbacks;
         this.satelliteService = satelliteService;
+        this.pause = pause;
+        this.nanoTime = nanoTime;
+        this.jitter = jitter;
         this.publishExecutor = new ThreadPoolExecutor(
                 1, 1,
                 0L, TimeUnit.MILLISECONDS,
@@ -101,16 +137,25 @@ public class HttpMessagePublisher implements IExtensionStateListener {
 
     /**
      * Convert and queue an HTTP message for asynchronous delivery to Levo's Satellite.
+     * Bodies are sliced with {@link IRequestInfo#getBodyOffset()} and
+     * {@link IResponseInfo#getBodyOffset()} so a blank line inside an XML or gRPC
+     * payload is part of the body.
      */
-    void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) {
-        HttpMessage httpMessage = convertToHttpMessage(reqInfo, reqContent, statusCode, resContent);
+    void sendHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent,
+                         IResponseInfo resInfo) {
+        HttpMessage httpMessage = convertToHttpMessage(reqInfo, reqContent, statusCode, resContent, resInfo);
         if (httpMessage == null) {
             return;
         }
 
         final String urlForLog = reqInfo.getUrl().getHost() + reqInfo.getUrl().getPath();
-
-        publishExecutor.execute(() -> deliverToSatellite(httpMessage, urlForLog));
+        long bytes = retainedBodyBytes(httpMessage);
+        PublishTask task = new PublishTask(httpMessage, urlForLog, bytes);
+        if (!tryReserve(bytes)) {
+            noteDrop("Levo Satellite publish queue is over its byte budget; dropped a message");
+            return;
+        }
+        publishExecutor.execute(task);
     }
 
     private void deliverToSatellite(HttpMessage httpMessage, String urlForLog) {
@@ -118,6 +163,12 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         // enabled are NOT exfiltrated after the user disables "Send traffic to Levo".
         // The listener stops enqueuing immediately on toggle-off, but tasks already in
         // the queue would otherwise still execute.
+        //
+        // Satellite's /1.0/ebpf/traces handler publishes every POST and does not dedupe
+        // trace_id or span_id, so a retry can record the same exchange twice. The ids are
+        // still assigned once, before the first attempt, and reused. Only transport
+        // failures and statuses that ask the client to try again are retried. A permanent
+        // 4xx or a JSON serialization failure is not.
         Exception lastFailure = null;
         for (int attempt = 0; attempt < SATELLITE_SEND_ATTEMPTS; attempt++) {
             if (!ConfigMenu.IS_SENDING_ENABLED) {
@@ -133,9 +184,46 @@ public class HttpMessagePublisher implements IExtensionStateListener {
                 if (Thread.currentThread().isInterrupted()) {
                     return;
                 }
+                boolean moreAttempts = attempt + 1 < SATELLITE_SEND_ATTEMPTS;
+                if (!moreAttempts || !isRetryable(e)) {
+                    break;
+                }
+                try {
+                    pause.pause(retryDelayMillis(attempt, e));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
         }
         logSendFailure(lastFailure);
+    }
+
+    private static boolean isRetryable(Exception e) {
+        if (!(e instanceof SatelliteMessageFailed)) {
+            return false;
+        }
+        int status = ((SatelliteMessageFailed) e).getStatusCode();
+        return status == 0
+                || status == 408
+                || status == 429
+                || status == 500
+                || status == 502
+                || status == 503
+                || status == 504;
+    }
+
+    private long retryDelayMillis(int attempt, Exception failure) {
+        if (failure instanceof SatelliteMessageFailed) {
+            Long retryAfter = ((SatelliteMessageFailed) failure).getRetryAfterMillis();
+            if (retryAfter != null) {
+                long delay = Math.max(0L, retryAfter);
+                return Math.min(delay, LevoSatelliteService.MAX_RETRY_AFTER_MS);
+            }
+        }
+        long exponential = RETRY_BASE_DELAY_MS << attempt;
+        int spread = Math.max(0, jitter.getAsInt());
+        return exponential + spread;
     }
 
     private void logSendFailure(Exception e) {
@@ -168,33 +256,51 @@ public class HttpMessagePublisher implements IExtensionStateListener {
      * and the retry cannot trigger a misleading "queue full" alert.
      */
     private void onPublishRejected(Runnable r, ThreadPoolExecutor exec) {
-        java.util.concurrent.BlockingQueue<Runnable> q = exec.getQueue();
+        BlockingQueue<Runnable> q = exec.getQueue();
         while (!exec.isShutdown()) {
             Runnable evicted = q.poll();
-            if (evicted != null) {
-                noteQueueDrop();
+            if (evicted instanceof PublishTask) {
+                ((PublishTask) evicted).release();
+                noteDrop("Levo Satellite publish queue full; dropped oldest messages");
             }
             if (q.offer(r)) {
                 return;
             }
             // Another producer refilled the queue between poll() and offer() — loop and drop another.
         }
+        if (r instanceof PublishTask) {
+            ((PublishTask) r).release();
+        }
     }
 
     /**
      * Log the first drop, every 100th drop, and at least once per
-     * {@link #QUEUE_DROP_LOG_INTERVAL_MS} while drops continue. The total in the
-     * line is the count at the moment the line is emitted.
+     * {@link #QUEUE_DROP_LOG_INTERVAL_NS} while drops continue. Elapsed time comes
+     * from {@link #nanoTime}, so a wall-clock rollback cannot suppress the warning.
      */
-    private void noteQueueDrop() {
+    private void noteDrop(String messagePrefix) {
         long total = droppedCount.incrementAndGet();
-        long now = System.currentTimeMillis();
-        long last = lastQueueDropLogAtMs.get();
+        long now = nanoTime.getAsLong();
+        long last = lastQueueDropLogAtNs.get();
         boolean milestone = total == 1 || total % 100 == 0;
-        boolean windowElapsed = now - last >= QUEUE_DROP_LOG_INTERVAL_MS;
-        if ((milestone || windowElapsed) && lastQueueDropLogAtMs.compareAndSet(last, now)) {
-            this.alertWriter.writeInfo(
-                    "Levo Satellite publish queue full; dropped oldest messages (total dropped: " + total + ").");
+        boolean windowElapsed = now - last >= QUEUE_DROP_LOG_INTERVAL_NS;
+        if ((milestone || windowElapsed) && lastQueueDropLogAtNs.compareAndSet(last, now)) {
+            this.alertWriter.writeInfo(messagePrefix + " (total dropped: " + total + ").");
+        }
+    }
+
+    private boolean tryReserve(long bytes) {
+        if (bytes < 0 || bytes > MAX_QUEUED_BODY_BYTES) {
+            return false;
+        }
+        while (true) {
+            long current = queuedBodyBytes.get();
+            if (current > MAX_QUEUED_BODY_BYTES - bytes) {
+                return false;
+            }
+            if (queuedBodyBytes.compareAndSet(current, current + bytes)) {
+                return true;
+            }
         }
     }
 
@@ -217,9 +323,11 @@ public class HttpMessagePublisher implements IExtensionStateListener {
     /**
      * A missing Content-Type is kept. Comparison is on the media type only, so
      * {@code Application/JSON; charset=UTF-8} matches {@code application/json}.
-     * Any media type containing {@code graphql}, and the {@code application/grpc}
-     * family ({@code application/grpc}, {@code application/grpc+…},
-     * {@code application/grpc-…}), are accepted along with {@link #ACCEPTED_CONTENT_TYPES}.
+     * GraphQL is accepted only as {@code application/graphql}, a type that starts
+     * with {@code application/graphql+} or {@code application/graphql-}, or
+     * {@code application/vnd.graphql+json}. The {@code application/grpc} family
+     * ({@code application/grpc}, {@code application/grpc+…}, {@code application/grpc-…})
+     * is accepted along with {@link #ACCEPTED_CONTENT_TYPES}.
      */
     static boolean shouldDropContentType(String contentType) {
         if (contentType == null) {
@@ -229,7 +337,7 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         if ("(missing)".equals(mediaType)) {
             return true;
         }
-        if (mediaType.contains("graphql")) {
+        if (isAcceptedGraphql(mediaType)) {
             return false;
         }
         if ("application/grpc".equals(mediaType)
@@ -238,6 +346,13 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             return false;
         }
         return !ACCEPTED_CONTENT_TYPES.contains(mediaType);
+    }
+
+    private static boolean isAcceptedGraphql(String mediaType) {
+        return "application/graphql".equals(mediaType)
+                || mediaType.startsWith("application/graphql+")
+                || mediaType.startsWith("application/graphql-")
+                || "application/vnd.graphql+json".equals(mediaType);
     }
 
     private void logDroppedContentType(String side, String contentType) {
@@ -253,10 +368,11 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         }
         int semicolon = contentType.indexOf(';');
         String mediaType = semicolon >= 0 ? contentType.substring(0, semicolon) : contentType;
-        return mediaType.trim().toLowerCase();
+        return mediaType.trim().toLowerCase(Locale.ROOT);
     }
 
-    private HttpMessage convertToHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode, byte[] resContent) {
+    private HttpMessage convertToHttpMessage(IRequestInfo reqInfo, byte[] reqContent, String statusCode,
+                                             byte[] resContent, IResponseInfo resInfo) {
         HttpMessage.Request request = new HttpMessage.Request();
         request.setHeaders(convertHeadersToMap(reqInfo.getHeaders()));
 
@@ -275,23 +391,15 @@ public class HttpMessagePublisher implements IExtensionStateListener {
             request.getHeaders().put(":path", reqInfo.getUrl().getPath());
         }
 
-        String[] requestParts = callbacks.getHelpers().bytesToString(reqContent).split(TWO_LINES_PATTERN);
-        if (requestParts.length > 1 && !requestParts[1].isEmpty()) {
-            // Base64 encode the body.
-            request.setBody(callbacks.getHelpers().base64Encode(requestParts[1]));
-        } else {
-            request.setBody("");
-        }
+        EncodedBody requestBody = encodeBody(reqContent, reqInfo.getBodyOffset());
+        request.setBody(requestBody.base64);
+        request.setTruncated(requestBody.truncated);
 
         HttpMessage.Response response = new HttpMessage.Response();
-        String[] responseParts = callbacks.getHelpers().bytesToString(resContent).split(TWO_LINES_PATTERN);
-
-        // Create response headers from the first part of the response. Ignore the status line.
-        String[] responseHeaders = responseParts[0].split(NEW_LINE_PATTERN);
-        if (responseHeaders.length > 1) {
-            List<String> headers = java.util.Arrays.asList(responseHeaders);
-            headers = headers.subList(1, headers.size());
-            response.setHeaders(convertHeadersToMap(headers));
+        response.setHeaders(new HashMap<>());
+        List<String> rawResponseHeaders = resInfo == null ? null : resInfo.getHeaders();
+        if (rawResponseHeaders != null && rawResponseHeaders.size() > 1) {
+            response.setHeaders(convertHeadersToMap(rawResponseHeaders.subList(1, rawResponseHeaders.size())));
         }
 
         // Ignore if the response isn't acceptable content type
@@ -305,13 +413,12 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         if (PDF_MEDIA_TYPE.equals(mediaTypeKey(contentType))) {
             alertWriter.writeInfo("Not sending response body for content-type: " + contentType + " to Levo.");
             response.setBody("");
+            response.setTruncated(false);
         } else {
-            if (responseParts.length > 1 && !responseParts[1].isEmpty()) {
-                // Base64 encode the response body.
-                response.setBody(callbacks.getHelpers().base64Encode(responseParts[1]));
-            } else {
-                response.setBody("");
-            }
+            int responseOffset = resInfo == null ? (resContent == null ? 0 : resContent.length) : resInfo.getBodyOffset();
+            EncodedBody responseBody = encodeBody(resContent, responseOffset);
+            response.setBody(responseBody.base64);
+            response.setTruncated(responseBody.truncated);
         }
 
         // Add the status code separately in the headers.
@@ -335,12 +442,39 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         return httpMessage;
     }
 
+    private EncodedBody encodeBody(byte[] message, int bodyOffset) {
+        if (message == null || bodyOffset < 0 || bodyOffset >= message.length) {
+            return EncodedBody.EMPTY;
+        }
+        int available = message.length - bodyOffset;
+        boolean truncated = available > MAX_RAW_BODY_BYTES;
+        int length = truncated ? MAX_RAW_BODY_BYTES : available;
+        byte[] body = Arrays.copyOfRange(message, bodyOffset, bodyOffset + length);
+        String encoded = callbacks.getHelpers().base64Encode(body);
+        if (encoded == null) {
+            encoded = "";
+        }
+        return new EncodedBody(encoded, truncated);
+    }
+
+    private static long retainedBodyBytes(HttpMessage message) {
+        return textLength(message.getRequest() == null ? null : message.getRequest().getBody())
+                + textLength(message.getResponse() == null ? null : message.getResponse().getBody());
+    }
+
+    private static long textLength(String value) {
+        return value == null ? 0L : value.length();
+    }
+
     private Map<String, String> convertHeadersToMap(List<String> headers) {
-        Map<String, String> headersMap = new java.util.HashMap<>();
+        Map<String, String> headersMap = new HashMap<>();
+        if (headers == null) {
+            return headersMap;
+        }
         for (String header : headers) {
             String[] headerParts = header.split(":", 2);
             if (headerParts.length == 2) {
-                headersMap.put(headerParts[0].trim().toLowerCase(), headerParts[1].trim());
+                headersMap.put(headerParts[0].trim().toLowerCase(Locale.ROOT), headerParts[1].trim());
             }
         }
 
@@ -359,6 +493,46 @@ public class HttpMessagePublisher implements IExtensionStateListener {
         } catch (InterruptedException e) {
             publishExecutor.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private final class PublishTask implements Runnable {
+        private final HttpMessage httpMessage;
+        private final String urlForLog;
+        private final long bytes;
+        private final AtomicBoolean released = new AtomicBoolean();
+
+        private PublishTask(HttpMessage httpMessage, String urlForLog, long bytes) {
+            this.httpMessage = httpMessage;
+            this.urlForLog = urlForLog;
+            this.bytes = bytes;
+        }
+
+        @Override
+        public void run() {
+            try {
+                deliverToSatellite(httpMessage, urlForLog);
+            } finally {
+                release();
+            }
+        }
+
+        private void release() {
+            if (released.compareAndSet(false, true)) {
+                queuedBodyBytes.addAndGet(-bytes);
+            }
+        }
+    }
+
+    private static final class EncodedBody {
+        private static final EncodedBody EMPTY = new EncodedBody("", false);
+
+        private final String base64;
+        private final boolean truncated;
+
+        private EncodedBody(String base64, boolean truncated) {
+            this.base64 = base64;
+            this.truncated = truncated;
         }
     }
 }

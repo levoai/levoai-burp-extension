@@ -14,9 +14,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.swing.JMenuItem;
+import javax.swing.SwingUtilities;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,6 +65,7 @@ class SendToLevoMenuTest {
     @AfterEach
     void tearDown() {
         ConfigMenu.IS_SENDING_ENABLED = false;
+        menu.extensionUnloaded();
     }
 
     @Test
@@ -89,7 +96,7 @@ class SendToLevoMenuTest {
 
         menu.sendSelected(new IHttpRequestResponse[]{message}, notices::add);
 
-        verify(publisher).sendHttpMessage(eq(requestInfo), any(), eq("200"), any());
+        verify(publisher).sendHttpMessage(eq(requestInfo), any(), eq("200"), any(), eq(responseInfo));
         assertTrue(notices.isEmpty());
     }
 
@@ -102,7 +109,7 @@ class SendToLevoMenuTest {
 
         menu.sendSelected(new IHttpRequestResponse[]{message}, notices::add);
 
-        verify(publisher, never()).sendHttpMessage(any(), any(), any(), any());
+        verify(publisher, never()).sendHttpMessage(any(), any(), any(), any(), any());
         assertEquals(1, notices.size());
         assertTrue(notices.get(0).startsWith("Not sending this message because its content type is not supported."));
         assertTrue(notices.get(0).contains("response content-type 'text/html; charset=UTF-8' is not supported"));
@@ -127,11 +134,11 @@ class SendToLevoMenuTest {
 
         menu.sendSelected(new IHttpRequestResponse[]{html, message}, notices::add);
 
-        verify(publisher, times(1)).sendHttpMessage(eq(requestInfo), any(), eq("200"), any());
-        verify(publisher, never()).sendHttpMessage(eq(htmlRequest), any(), any(), any());
+        verify(publisher, times(1)).sendHttpMessage(eq(requestInfo), any(), eq("200"), any(), eq(responseInfo));
+        verify(publisher, never()).sendHttpMessage(eq(htmlRequest), any(), any(), any(), any());
         assertEquals(1, notices.size());
         assertTrue(notices.get(0).contains("response content-type 'text/html' is not supported"));
-        assertTrue(notices.get(0).contains("Sent 1 other message."));
+        assertTrue(notices.get(0).contains("Queued 1 other message."));
     }
 
     @Test
@@ -144,6 +151,53 @@ class SendToLevoMenuTest {
         verifyNoInteractions(publisher);
         assertEquals(1, notices.size());
         assertTrue(notices.get(0).contains("Sending to Levo is turned off."));
+    }
+
+    @Test
+    void menuAction_sendsOnTheExecutorThread() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicReference<Thread> sender = new AtomicReference<>();
+        Executor executor = command -> {
+            Thread worker = new Thread(() -> {
+                try {
+                    command.run();
+                } finally {
+                    done.countDown();
+                }
+            }, "levo-send-test");
+            worker.start();
+        };
+        doAnswer(invocation -> {
+            sender.set(Thread.currentThread());
+            assertFalse(SwingUtilities.isEventDispatchThread());
+            return null;
+        }).when(publisher).sendHttpMessage(any(), any(), any(), any(), any());
+        stubMessage("POST", "https://example.com/api",
+                List.of("POST /api HTTP/1.1", "Content-Type: application/json"),
+                List.of("HTTP/1.1 200 OK", "Content-Type: application/json"));
+        when(invocation.getSelectedMessages()).thenReturn(new IHttpRequestResponse[]{message});
+
+        SendToLevoMenu asyncMenu = new SendToLevoMenu(callbacks, publisher, executor);
+        asyncMenu.createMenuItems(invocation).get(0).doClick();
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertNotNull(sender.get());
+        assertEquals("levo-send-test", sender.get().getName());
+        assertNotSame(Thread.currentThread(), sender.get());
+    }
+
+    @Test
+    void menuAction_whenTheExecutorIsBusy_reportsOverload() {
+        Executor rejecting = command -> {
+            throw new RejectedExecutionException("full");
+        };
+        SendToLevoMenu busy = new SendToLevoMenu(callbacks, publisher, rejecting);
+        List<String> notices = new ArrayList<>();
+
+        busy.submitSend(new IHttpRequestResponse[]{message}, notices::add);
+
+        assertEquals(List.of(SendToLevoMenu.STILL_SENDING_MESSAGE), notices);
+        verifyNoInteractions(publisher);
     }
 
     @Test

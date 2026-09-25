@@ -63,10 +63,11 @@ public class HttpMessageListener implements IHttpListener {
             // Send the HTTP message to Levo's Satellite according to the restriction options
             IRequestInfo reqInfo = callbacks.getHelpers().analyzeRequest(message);
             if (this.shouldSendRequest(reqInfo)) {
-                IResponseInfo responseInfoStatusCode = callbacks.getHelpers().analyzeResponse(message.getResponse());
-                String statusCode = String.valueOf(responseInfoStatusCode.getStatusCode());
+                IResponseInfo responseInfo = callbacks.getHelpers().analyzeResponse(message.getResponse());
+                String statusCode = String.valueOf(responseInfo.getStatusCode());
                 byte[] response = message.getResponse();
-                this.httpMessagePublisher.sendHttpMessage(reqInfo, message.getRequest(), statusCode, response);
+                this.httpMessagePublisher.sendHttpMessage(
+                        reqInfo, message.getRequest(), statusCode, response, responseInfo);
             }
         } catch (Exception e) {
             this.alertWriter.writeError("Cannot send request: " + e.getMessage());

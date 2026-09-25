@@ -1,10 +1,13 @@
 package ai.levo;
 
 import ai.levo.exceptions.SatelliteMessageFailed;
+import burp.IBurpExtenderCallbacks;
+import burp.IHttpRequestResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.ProxySelector;
@@ -12,10 +15,16 @@ import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
@@ -24,6 +33,14 @@ public class LevoSatelliteService {
     private static final String TRACES_PATH = "/1.0/ebpf/traces";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
+    /** Error responses are logged, not parsed. Keep only a short diagnostic. */
+    static final int MAX_ERROR_BODY_BYTES = 1024;
+    /**
+     * Upper bound on a single retry wait. The publish worker is one thread, so a
+     * multi-minute {@code Retry-After} would stall every other trace.
+     */
+    static final long MAX_RETRY_AFTER_MS = 5_000L;
+    private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.RFC_1123_DATE_TIME;
 
     /**
      * Direct connection. Burp's HTTP stack would apply match-and-replace, session
@@ -44,6 +61,16 @@ public class LevoSatelliteService {
         return new LevoSatelliteService(satelliteUrl, organizationId, environment);
     }
 
+    /**
+     * @deprecated The Burp callbacks are not used. Posts go directly to Satellite.
+     *             Use {@link #create(String, String, String)}.
+     */
+    @Deprecated
+    public static LevoSatelliteService create(String satelliteUrl, String organizationId, String environment,
+                                              IBurpExtenderCallbacks callbacks) throws MalformedURLException {
+        return create(satelliteUrl, organizationId, environment);
+    }
+
     // Mutable config updated from the Swing EDT (ConfigMenu actions) and read from the
     // publish worker thread. volatile gives the worker visibility of EDT writes without
     // synchronization. satelliteUrl is swapped as a single reference.
@@ -62,6 +89,16 @@ public class LevoSatelliteService {
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .proxy(DIRECT)
                 .build();
+    }
+
+    /**
+     * @deprecated The Burp callbacks are not used. Posts go directly to Satellite.
+     *             Use {@link #LevoSatelliteService(String, String, String)}.
+     */
+    @Deprecated
+    public LevoSatelliteService(IBurpExtenderCallbacks callbacks, String satelliteUrl, String organizationId,
+                                String environment) throws MalformedURLException {
+        this(satelliteUrl, organizationId, environment);
     }
 
     public void updateSatelliteUrl(String satelliteUrl) throws MalformedURLException {
@@ -86,7 +123,14 @@ public class LevoSatelliteService {
         return this.environment;
     }
 
-    public void sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
+    /**
+     * Posts the trace directly to Satellite.
+     *
+     * @return always {@code null}. Earlier versions returned the {@link IHttpRequestResponse}
+     *         from Burp's {@code makeHttpRequest}. The direct client has no Burp message to
+     *         return; the signature is unchanged so compiled callers keep linking.
+     */
+    public IHttpRequestResponse sendHttpMessage(HttpMessage httpMessage) throws SatelliteMessageFailed, JsonProcessingException {
         if (organizationId == null || organizationId.isEmpty()) {
             throw new SatelliteMessageFailed("Organization ID is not set", (short) 400);
         }
@@ -111,9 +155,9 @@ public class LevoSatelliteService {
             throw new SatelliteMessageFailed("Invalid Satellite URL: " + e.getMessage(), (short) 400);
         }
 
-        HttpResponse<String> response;
+        HttpResponse<InputStream> response;
         try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         } catch (IOException e) {
             throw new SatelliteMessageFailed(
                     "Failed to connect to Levo Satellite. " + e.getMessage(), (short) 0);
@@ -124,9 +168,58 @@ public class LevoSatelliteService {
         }
 
         int status = response.statusCode();
-        if (status < 200 || status >= 300) {
-            String body = response.body() == null ? "" : response.body();
-            throw new SatelliteMessageFailed(body, (short) status);
+        try (InputStream body = response.body()) {
+            if (status >= 200 && status < 300) {
+                return null;
+            }
+            throw new SatelliteMessageFailed(
+                    readErrorBody(body), (short) status, retryAfterMillis(response.headers()));
+        } catch (IOException e) {
+            throw new SatelliteMessageFailed(
+                    "Failed to read Levo Satellite response. " + e.getMessage(), (short) status);
+        }
+    }
+
+    private static String readErrorBody(InputStream body) throws IOException {
+        if (body == null) {
+            return "";
+        }
+        byte[] buf = body.readNBytes(MAX_ERROR_BODY_BYTES + 1);
+        int length = Math.min(buf.length, MAX_ERROR_BODY_BYTES);
+        String text = new String(buf, 0, length, StandardCharsets.UTF_8);
+        if (buf.length > MAX_ERROR_BODY_BYTES) {
+            return text + "...";
+        }
+        return text;
+    }
+
+    static Long retryAfterMillis(HttpHeaders headers) {
+        Optional<String> raw = headers.firstValue("retry-after");
+        if (raw.isEmpty()) {
+            return null;
+        }
+        String text = raw.get().trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            long seconds = Long.parseLong(text);
+            if (seconds < 0) {
+                return null;
+            }
+            long millis = Math.multiplyExact(Math.min(seconds, MAX_RETRY_AFTER_MS / 1000L), 1000L);
+            return Math.min(millis, MAX_RETRY_AFTER_MS);
+        } catch (NumberFormatException ignored) {
+            try {
+                long when = ZonedDateTime.parse(text, HTTP_DATE).toInstant().toEpochMilli();
+                long delay = when - System.currentTimeMillis();
+                if (delay < 0) {
+                    return 0L;
+                }
+                return Math.min(delay, MAX_RETRY_AFTER_MS);
+            } catch (DateTimeParseException e) {
+                return null;
+            }
         }
     }
 
